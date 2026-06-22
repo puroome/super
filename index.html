@@ -24,10 +24,29 @@
 <header>
   <h1>📋 시험감독 배정 시스템</h1>
   <div class="header-actions">
-    <button class="btn-primary" onclick="saveAll()">💾 저장</button>
-    <button class="btn-outline" onclick="saveAsNamed()">📁 다른 이름 저장</button>
-    <button class="btn-outline" onclick="openLoadModal()">📂 불러오기</button>
-    <button class="btn-danger" onclick="resetAll()">🗑️ 초기화</button>
+    <button class="btn-primary btn-icon" onclick="saveAll()">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 3h11l3 3v11H3z"/>
+        <rect x="6.5" y="3" width="5" height="4"/>
+        <rect x="5.5" y="11" width="9" height="5"/>
+      </svg>
+      저장
+    </button>
+    <button class="btn-outline btn-icon" onclick="saveAsNamed()">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 3h11l3 3v11H3z"/>
+        <rect x="6.5" y="3" width="5" height="4"/>
+        <rect x="5.5" y="11" width="9" height="5"/>
+      </svg>
+      다른 이름 저장
+    </button>
+    <button class="btn-outline btn-icon" onclick="openLoadModal()">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 6.5a1 1 0 0 1 1-1h3.5l1.2 1.6H16a1 1 0 0 1 1 1V15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
+      </svg>
+      불러오기
+    </button>
+    <button class="btn-danger" onclick="resetAll()">초기화</button>
   </div>
 </header>
 
@@ -186,11 +205,9 @@
     <h2>📋 감독표 출력</h2>
     <div class="table-actions">
       <button class="btn-primary" onclick="printFull()">🖨️ 전체 감독표</button>
-      <button class="btn-primary" onclick="printDaily()">🖨️ 일별 감독표</button>
-      <button class="btn-outline" onclick="printAllPersonal()">🖨️ 개인시간표 전체</button>
+      <button class="btn-outline" onclick="printAllPersonal()">🖨️ 개인 (전체)</button>
       <span style="display:flex;align-items:center;gap:6px">
-        <select id="personal-teacher-select" style="padding:5px 8px;border-radius:4px;border:1px solid #d0d7e3"></select>
-        <button class="btn-outline" onclick="printPersonal()">개인시간표 출력</button>
+        <select id="personal-teacher-select" onchange="printPersonalByValue(this.value)" style="padding:5px 8px;border-radius:4px;border:1px solid #d0d7e3"></select>
       </span>
     </div>
     <div id="table-wrap" style="overflow-x:auto">
