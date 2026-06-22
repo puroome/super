@@ -172,9 +172,14 @@ function printElement(html, title = '감독표', isFullTable = false) {
     .print-table th {
       writing-mode: vertical-rl;
       text-orientation: upright;
-      letter-spacing: -0.05em;
+      letter-spacing: 0;
       white-space: nowrap;
       padding: 4px 2px;
+    }
+    /* 괄호는 세로쓰기에서 눕혀서 표시 */
+    .print-table th span.paren {
+      text-orientation: mixed;
+      display: inline-block;
     }
     /* 교시·보직·합계 열은 세로쓰기 불필요, 별도 class로 override */
     .print-table th.h-text {
