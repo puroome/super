@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>시험감독 배정 시스템</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="loading">⏳ 불러오는 중...</div>
+<div id="toast"></div>
+
+<!-- 헤더 -->
+<header>
+  <h1>📋 시험감독 배정 시스템</h1>
+  <div class="header-actions">
+    <button class="btn-primary" onclick="saveAll()">💾 저장</button>
+  </div>
+</header>
+
+<!-- 탭 -->
+<div class="tabs">
+  <button class="tab-btn active" data-tab="tab-basic">📝 기본정보</button>
+  <button class="tab-btn" data-tab="tab-req" onclick="showRequirementsTab()">📊 배정설정</button>
+  <button class="tab-btn" data-tab="tab-assign">🎯 자동배정</button>
+  <button class="tab-btn" data-tab="tab-table">📋 감독표</button>
+</div>
+
+<!-- ══════════════════════════════════════════
+     탭1: 기본정보
+════════════════════════════════════════════ -->
+<div id="tab-basic" class="tab-panel active">
+  <div class="basic-grid">
+
+    <!-- 교사 목록 -->
+    <div class="card">
+      <h2>👩‍🏫 감독교사 목록</h2>
+      <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
+        <button class="btn-primary" onclick="addTeacher()">+ 교사 추가</button>
+        <label class="btn-outline" style="padding:5px 12px;cursor:pointer">
+          📂 CSV 가져오기
+          <input type="file" accept=".csv" onchange="handleTeacherCSV(event)" style="display:none">
+        </label>
+      </div>
+      <p class="csv-hint">CSV 형식: <code>이름,이전누적업무강도</code> (첫 줄은 헤더)</p>
+      <div style="overflow-x:auto;margin-top:8px">
+        <table>
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>배정할시간</th>
+              <th>이전누적강도</th>
+              <th>배정불가고사실</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="teacher-list"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 고사실 -->
+    <div class="card">
+      <h2>🏫 고사실 목록</h2>
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <input id="room-input" placeholder="고사실명 (예: 1-1)" style="flex:1;min-width:80px">
+        <button class="btn-primary" onclick="addRoom()">추가</button>
+        <label class="btn-outline" style="padding:5px 12px;cursor:pointer">
+          📂 CSV
+          <input type="file" accept=".csv" onchange="handleRoomCSV(event)" style="display:none">
+        </label>
+      </div>
+      <p class="csv-hint">CSV 형식: <code>고사실명</code> (첫 줄은 헤더)</p>
+      <div id="room-list" style="margin-top:8px"></div>
+    </div>
+
+    <!-- 보직 -->
+    <div class="card">
+      <h2>📌 보직 및 업무강도</h2>
+      <button class="btn-primary" onclick="addRole()" style="margin-bottom:8px">+ 보직 추가</button>
+      <table>
+        <thead>
+          <tr><th>보직명</th><th>업무강도</th><th></th></tr>
+        </thead>
+        <tbody id="role-list"></tbody>
+      </table>
+      <p class="csv-hint" style="margin-top:6px">업무강도: 정감독=100, 부감독=50, 대기실=10 등 (숫자 자유 설정)</p>
+    </div>
+
+    <!-- 시험 날짜/교시 -->
+    <div class="card">
+      <h2>📅 시험 날짜 및 교시</h2>
+      <button class="btn-primary" onclick="addExamDay()" style="margin-bottom:8px">+ 날짜 추가</button>
+      <table>
+        <thead>
+          <tr><th>날짜</th><th>시작교시</th><th>종료교시</th><th></th></tr>
+        </thead>
+        <tbody id="examday-list"></tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     탭2: 배정설정
+════════════════════════════════════════════ -->
+<div id="tab-req" class="tab-panel">
+  <div class="card">
+    <h2>📊 고사실별 배정감독수 설정</h2>
+    <p style="margin-bottom:10px;color:#7a8599;font-size:12px">
+      각 날짜/교시/보직별로 고사실에 몇 명을 배정할지 입력하세요.
+    </p>
+    <div id="req-table-wrap" style="overflow-x:auto"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     탭3: 자동배정
+════════════════════════════════════════════ -->
+<div id="tab-assign" class="tab-panel">
+  <div class="card">
+    <h2>🎯 자동배정</h2>
+    <div class="assign-actions">
+      <button id="btn-run" class="btn-run" onclick="runAssign()">🚀 자동배정 실행</button>
+      <button id="btn-swap" class="btn-outline" onclick="doSwap()" disabled>⇄ 선택 셀 교환</button>
+      <span style="color:#7a8599;font-size:11px">
+        셀 클릭: 선택(swap용) &nbsp;|&nbsp; 셀 더블클릭: 고정 토글
+      </span>
+    </div>
+
+    <div style="background:#fffbe6;border:1px solid #ffe082;border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px">
+      <strong>⚙️ 배정 전 확인사항</strong><br>
+      · 교사별 "배정할시간" 합계 = 전체 필요감독 수 합계여야 합니다.<br>
+      · 배정불가 고사실은 쉼표로 구분해 입력하세요 (예: 1-1,2-3)<br>
+      · 고정셀(더블클릭)은 자동배정에서 변경되지 않습니다.
+    </div>
+
+    <div id="assign-grid-wrap">
+      <p style="color:#7a8599">자동배정을 실행하거나 저장된 배정을 불러오세요.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     탭4: 감독표
+════════════════════════════════════════════ -->
+<div id="tab-table" class="tab-panel">
+  <div class="card">
+    <h2>📋 감독표 출력</h2>
+    <div class="table-actions">
+      <button class="btn-primary" onclick="printFull()">🖨️ 전체 감독표</button>
+      <button class="btn-primary" onclick="printDaily()">🖨️ 일별 감독표</button>
+      <button class="btn-outline" onclick="printAllPersonal()">🖨️ 개인시간표 전체</button>
+      <span style="display:flex;align-items:center;gap:6px">
+        <select id="personal-teacher-select" style="padding:5px 8px;border-radius:4px;border:1px solid #d0d7e3"></select>
+        <button class="btn-outline" onclick="printPersonal()">개인시간표 출력</button>
+      </span>
+    </div>
+    <div id="table-wrap" style="overflow-x:auto">
+      <p style="color:#7a8599">배정 결과가 없습니다. 자동배정 탭에서 배정을 실행하세요.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── JS (ES Module) ── -->
+<script type="module">
+  import { init } from './js/ui.js';
+  init();
+</script>
+
+</body>
+</html>
