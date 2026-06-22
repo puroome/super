@@ -171,7 +171,7 @@ function printElement(html, title = '감독표', isFullTable = false) {
        글자 간격도 -0.05em으로 좁힘. */
     .print-table th {
       writing-mode: vertical-rl;
-      text-orientation: mixed;
+      text-orientation: upright;
       letter-spacing: -0.05em;
       white-space: nowrap;
       padding: 4px 2px;
