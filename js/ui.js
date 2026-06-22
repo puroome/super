@@ -4,11 +4,13 @@ import {
   assignAll, swapCells, validateAssignment,
   buildSlots, extractRole, extractRoom, calcRoleCounts,
   parseRequirementsCSV, distributeQuota,
+  buildSaveSnapshot, applySnapshotToState, emptyState,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
   loadRequirements, saveRequirements,
   loadAssignment, saveAssignment, updateFixedCells, parseAssignment,
+  clearCurrentDocs, saveNamed, listSaves, loadNamed, deleteNamed,
 } from './firebase.js';
 import {
   printFullTable, printDailyTable, printPersonalTable, printAllPersonal,
@@ -524,6 +526,122 @@ async function saveAll() {
   }
 }
 
+// ─── 초기화 / 이름 지정 저장 / 불러오기 ───────────────────────────────────────────
+
+// 모든 화면을 새 state 기준으로 다시 그림 (초기화·불러오기에서 공용으로 사용)
+function rerenderAll() {
+  renderBasicTab();
+  renderRequirementsTab();
+  renderAssignGrid();
+  renderSupervisorTable();
+  renderPersonalSelect();
+}
+
+async function resetAll() {
+  if (!confirm('입력된 모든 데이터를 지웁니다. 저장하지 않은 내용은 사라집니다. 계속할까요?')) return;
+  Object.assign(state, emptyState());
+  state.selectedCells = [];
+  rerenderAll();
+  try {
+    // ponytail: 현재 작업본도 같이 비워야 새로고침했을 때 예전 자료가 다시 안 뜬다.
+    await clearCurrentDocs();
+  } catch (e) {
+    console.error(e);
+  }
+  toast('초기화 완료 — 새로 입력해주세요');
+}
+
+async function saveAsNamed() {
+  const name = window.prompt('저장할 이름을 입력하세요 (예: 2026 1학기 중간고사)', '');
+  if (!name || !name.trim()) return;
+  try {
+    await saveNamed(name.trim(), buildSaveSnapshot(state));
+    toast(`✅ "${name.trim()}" 이름으로 저장 완료`);
+  } catch (e) {
+    toast('저장 실패: ' + e.message, 4000);
+    console.error(e);
+  }
+}
+
+let saveListCache = []; // 불러오기 모달에서 삭제 시 이름 조회용
+
+function formatSaveDate(ts) {
+  try {
+    if (ts?.toDate) {
+      return ts.toDate().toLocaleString('ko-KR', {
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+      });
+    }
+  } catch (e) { /* 무시 */ }
+  return '';
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function openLoadModal() {
+  const modal = document.getElementById('load-modal');
+  const listEl = document.getElementById('load-list');
+  modal.style.display = 'flex';
+  listEl.innerHTML = '<p style="color:#7a8599">불러오는 중...</p>';
+  try {
+    saveListCache = await listSaves();
+    if (!saveListCache.length) {
+      listEl.innerHTML = '<p style="color:#7a8599">저장된 데이터가 없습니다.</p>';
+      return;
+    }
+    listEl.innerHTML = saveListCache.map(s => `
+      <div class="save-item">
+        <div>
+          <span class="save-name">${escapeHtml(s.name)}</span>
+          <span class="save-date">${formatSaveDate(s.savedAt)}</span>
+        </div>
+        <div class="save-actions">
+          <button class="btn-primary" onclick="loadNamedAndApply('${s.id}')">불러오기</button>
+          <button class="btn-danger" onclick="deleteNamedConfirm('${s.id}')">삭제</button>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    listEl.innerHTML = '<p style="color:#e53935">목록을 불러오지 못했습니다.</p>';
+    console.error(e);
+  }
+}
+
+function closeLoadModal() {
+  document.getElementById('load-modal').style.display = 'none';
+}
+
+async function loadNamedAndApply(id) {
+  try {
+    const snapshot = await loadNamed(id);
+    if (!snapshot) { toast('데이터를 찾을 수 없습니다.'); return; }
+    Object.assign(state, applySnapshotToState(snapshot));
+    state.selectedCells = [];
+    rerenderAll();
+    closeLoadModal();
+    toast('✅ 불러오기 완료');
+  } catch (e) {
+    toast('불러오기 실패: ' + e.message, 4000);
+    console.error(e);
+  }
+}
+
+async function deleteNamedConfirm(id) {
+  const item = saveListCache.find(s => s.id === id);
+  if (!confirm(`"${item?.name ?? ''}" 저장을 삭제할까요? 되돌릴 수 없습니다.`)) return;
+  try {
+    await deleteNamed(id);
+    toast('삭제 완료');
+    openLoadModal();
+  } catch (e) {
+    toast('삭제 실패: ' + e.message, 4000);
+    console.error(e);
+  }
+}
+
 // ─── CSV 가져오기 ─────────────────────────────────────────────────────────────
 
 function importTeacherCSV(text) {
@@ -647,6 +765,12 @@ window.addExamDay = () => {
 };
 
 window.saveAll = saveAll;
+window.resetAll = resetAll;
+window.saveAsNamed = saveAsNamed;
+window.openLoadModal = openLoadModal;
+window.closeLoadModal = closeLoadModal;
+window.loadNamedAndApply = loadNamedAndApply;
+window.deleteNamedConfirm = deleteNamedConfirm;
 window.runAssign = runAssign;
 window.doSwap = doSwap;
 window.autoFillQuota = autoFillQuota;

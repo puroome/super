@@ -173,6 +173,40 @@ input:focus { outline: 2px solid var(--accent); }
   color: var(--accent);
 }
 
+/* ── 불러오기 모달 ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(44,58,80,.45);
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal-box {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  width: 440px;
+  max-height: 70vh;
+  overflow-y: auto;
+  box-shadow: var(--shadow);
+}
+.modal-box h3 { font-size: 15px; color: var(--accent-dark); margin-bottom: 12px; }
+.save-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+.save-item .save-name { font-size: 13px; font-weight: 600; }
+.save-item .save-date { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
+.save-item .save-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
 /* ── 토스트 ── */
 #toast {
   position: fixed;

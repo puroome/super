@@ -560,15 +560,20 @@ function assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, tCoun
       remain[r] = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
     }
 
-    // 1단계: 고정셀 먼저
+    // 0단계: 이미 보직이 정해진 셀부터 인원수 차감 (반드시들어가야하는시간 등으로 사전 배정된 경우)
+    // ponytail: 이걸 빼먹으면 같은 보직 정원에서 한 명을 안 빼고 시작해서, 정원보다 한 명 더 배정되고
+    //   결국 고사실 풀이 모자라 "미배정"이 뜨는 버그로 이어진다. 업무강도 누적도 여기서 같이 반영한다.
+    for (let i = 1; i <= tCount; i++) {
+      const preRole = extractRole(String(data[i][j]));
+      if (preRole > 0) {
+        workload[i] += roles[preRole - 1].workload ?? 0;
+        if (remain[preRole] > 0) remain[preRole]--;
+      }
+    }
+
+    // 1단계: 고정셀(보직 미정, data===1) 먼저
     for (let i = 1; i <= tCount; i++) {
       if (!fixedMap[i][j] || data[i][j] !== 1) continue;
-      // 이미 보직 기입된 고정셀은 건너뜀
-      if (extractRole(String(data[i][j])) > 0) {
-        const r = extractRole(String(data[i][j]));
-        if (remain[r] > 0) remain[r]--;
-        continue;
-      }
       // 남은 보직 중 선택 요청 → 여기선 첫 번째 가능한 보직으로 자동 배정
       // ponytail: UI에서 고정셀 보직 선택 모달 처리, 여기선 auto-assign
       for (let r = 1; r <= roleCount; r++) {
@@ -969,6 +974,60 @@ function validateAssignment(teachers, slots, slotNeeds) {
   return { ok: errors.length === 0, errors };
 }
 
+// ─── 저장/불러오기/초기화 (순수 함수, DOM·Firestore 의존 없음) ────────────────────
+
+/**
+ * state → 저장용 평면 스냅샷
+ */
+function buildSaveSnapshot(state) {
+  return {
+    teachers: state.teachers,
+    rooms: state.rooms,
+    roles: state.roles,
+    examDays: state.examDays,
+    requirements: state.requirements,
+    roomRequirements: state.roomRequirements,
+    assignment: state.data ? {
+      data: state.data,
+      fixedCells: state.fixedCells,
+      workload: state.workload,
+      roleCounts: state.roleCounts,
+      slots: state.slots,
+    } : null,
+  };
+}
+
+/**
+ * 불러온 스냅샷 → state에 그대로 덮어쓸 수 있는 형태로 변환
+ */
+function applySnapshotToState(snapshot) {
+  const a = snapshot.assignment;
+  return {
+    teachers: snapshot.teachers ?? [],
+    rooms: snapshot.rooms ?? [],
+    roles: snapshot.roles ?? [],
+    examDays: snapshot.examDays ?? [],
+    requirements: snapshot.requirements ?? [],
+    roomRequirements: snapshot.roomRequirements ?? [],
+    data: a?.data ?? null,
+    fixedCells: a?.fixedCells ?? {},
+    workload: a?.workload ?? [],
+    roleCounts: a?.roleCounts ?? [],
+    slots: a?.slots ?? [],
+  };
+}
+
+/**
+ * "초기화" 버튼에서 쓸 빈 state
+ */
+function emptyState() {
+  return {
+    teachers: [], rooms: [], roles: [], examDays: [],
+    requirements: [], roomRequirements: [],
+    data: null, fixedCells: {}, workload: [], roleCounts: [], slots: [],
+  };
+}
+
 export {
   assignAll,
   swapCells,
@@ -982,4 +1041,8 @@ export {
   parseRequirementsCSV,
   distributeQuota,
   assignRooms,
+  assignRoles,
+  buildSaveSnapshot,
+  applySnapshotToState,
+  emptyState,
 };

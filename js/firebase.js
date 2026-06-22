@@ -1,8 +1,10 @@
 // firebase.js — Firestore CRUD
 
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp }
-  from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import {
+  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, serverTimestamp,
+  collection, addDoc, getDocs, query, orderBy,
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyBIX_j0nS3kldLegBmr_f0fG_hB5vTz6Xw',
@@ -111,8 +113,64 @@ function parseAssignment(raw) {
   };
 }
 
+/**
+ * 현재 작업본(자동 이어쓰기용 config/basic, config/requirements, assignments/current)을 모두 비움.
+ * ponytail: "초기화" 버튼에서 호출 — 안 비우면 새로고침 시 loadAll()이 이 문서들을 다시 읽어와서
+ *   화면을 지워도 자료가 되살아나는 것처럼 보인다. 존재하지 않는 문서를 delete해도 에러는 안 남.
+ */
+async function clearCurrentDocs() {
+  await Promise.all([
+    deleteDoc(doc(db, 'config', 'basic')),
+    deleteDoc(doc(db, 'config', 'requirements')),
+    deleteDoc(doc(db, 'assignments', 'current')),
+  ]);
+}
+
+// ─── 이름 지정 저장(저장함) ───────────────────────────────────────────────────
+
+/**
+ * 완성된 작업본을 이름을 붙여 별도로 저장 (여러 건 누적 가능)
+ * @param {string} name
+ * @param {Object} snapshot { teachers, rooms, roles, examDays, requirements, roomRequirements, assignment }
+ */
+async function saveNamed(name, snapshot) {
+  await addDoc(collection(db, 'saves'), {
+    name,
+    payload: JSON.stringify(snapshot),
+    savedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * 저장함 목록 (최신순)
+ * @returns {Array<{id, name, savedAt}>}
+ */
+async function listSaves() {
+  const snap = await getDocs(query(collection(db, 'saves'), orderBy('savedAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, name: d.data().name, savedAt: d.data().savedAt }));
+}
+
+/**
+ * 저장함에서 하나 불러오기
+ * @returns {Object|null} snapshot
+ */
+async function loadNamed(id) {
+  const snap = await getDoc(doc(db, 'saves', id));
+  if (!snap.exists()) return null;
+  return JSON.parse(snap.data().payload);
+}
+
+/**
+ * 저장함에서 하나 삭제
+ */
+async function deleteNamed(id) {
+  await deleteDoc(doc(db, 'saves', id));
+}
+
 export {
   loadBasic, saveBasic,
   loadRequirements, saveRequirements,
   loadAssignment, saveAssignment, updateFixedCells, parseAssignment,
+  clearCurrentDocs,
+  saveNamed, listSaves, loadNamed, deleteNamed,
 };
