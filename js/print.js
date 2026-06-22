@@ -157,6 +157,7 @@ function printElement(html, title = '감독표', isFullTable = false) {
       writing-mode: vertical-rl;
       text-orientation: upright;
       letter-spacing: normal;
+      line-height: 1.8;
       white-space: nowrap;
       padding: 4px 2px;
       font-size: 9px;
