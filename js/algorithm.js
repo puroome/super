@@ -112,7 +112,10 @@ function parseRequirementsCSV(text, examDays, roles) {
   const header = lines[0].split(',').map(s => s.trim());
   const roomCols = header.slice(3);
   const errors = [];
-  const roomRequirements = [];
+  // ponytail: 같은 날짜/교시/보직/고사실 행이 CSV에 중복으로 있으면 합산한다.
+  //   따로따로 push하면 화면(첫 매칭만 표시)엔 "1"로 보이는데 실제 풀에는 "1+1"이 들어가
+  //   고사실 정원보다 사람이 많아져 같은 방에 중복 배정되는 버그로 이어진다.
+  const merged = new Map(); // key(NUL로 구분) → {dayIdx, period, roleIdx, roomName, count}
 
   lines.slice(1).forEach((line, rowIdx) => {
     const parts = line.split(',').map(s => s.trim());
@@ -127,11 +130,15 @@ function parseRequirementsCSV(text, examDays, roles) {
 
     roomCols.forEach((room, ci) => {
       const count = parseInt(counts[ci]) || 0;
-      if (count > 0) roomRequirements.push({ dayIdx, period, roleIdx, roomName: room, count });
+      if (count <= 0) return;
+      const key = `${dayIdx}\u0000${period}\u0000${roleIdx}\u0000${room}`;
+      const existing = merged.get(key);
+      if (existing) existing.count += count;
+      else merged.set(key, { dayIdx, period, roleIdx, roomName: room, count });
     });
   });
 
-  return { roomRequirements, errors };
+  return { roomRequirements: [...merged.values()], errors };
 }
 
 /**
@@ -611,7 +618,17 @@ function getRoleByRoomName(roomName, assignedRole) {
   return assignedRole;
 }
 
+/**
+ * ⑤ 고사실배정
+ * @returns {Array<{i:number, j:number, roleIdx:number}>} roomShortages
+ *   고사실 칸(roomRequirements)보다 배정된 인원이 많아서 방을 못 받은 자리 목록.
+ *   ponytail: 예전엔 idx % shuffled.length로 칸이 부족하면 같은 방을 중복 배정했음 —
+ *   "정원 1명인 방에 2명이 들어가는" 버그의 원인. 이제는 절대 중복시키지 않고
+ *   '미배정'으로 표시한 뒤 shortage로 기록해 호출부에서 경고할 수 있게 한다.
+ */
 function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomRequirements, tCount, sCount) {
+  const roomShortages = [];
+
   for (let j = 1; j <= sCount; j++) {
     const { dayIdx, period } = slots[j - 1];
     const roleCount = roles.length;
@@ -623,15 +640,23 @@ function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomR
 
       for (let i = 1; i <= tCount; i++) {
         if (extractRole(String(data[i][j])) === r) {
-          const room = shuffled[idx % shuffled.length] ?? '';
-          // 복도 고사실이면 보직을 2(부감독)로 재매핑
-          const actualRole = getRoleByRoomName(room, r);
-          data[i][j] = `${room}[${actualRole}]`;
+          if (idx < shuffled.length) {
+            const room = shuffled[idx];
+            // 복도 고사실이면 보직을 2(부감독)로 재매핑
+            const actualRole = getRoleByRoomName(room, r);
+            data[i][j] = `${room}[${actualRole}]`;
+          } else {
+            // 고사실 칸보다 배정된 인원이 많음 — 중복 배정 대신 미배정으로 남기고 기록
+            data[i][j] = `미배정[${r}]`;
+            roomShortages.push({ i, j, roleIdx: r });
+          }
           idx++;
         }
       }
     }
   }
+
+  return roomShortages;
 }
 
 // ─── ⑥ 배정불가 고사실 처리 ──────────────────────────────────────────────────
@@ -895,7 +920,7 @@ function assignAll(input) {
   assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, tCount, sCount);
 
   // ⑤ 고사실 배정
-  assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomRequirements, tCount, sCount);
+  const roomShortages = assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomRequirements, tCount, sCount);
 
   // ⑥ 배정불가 고사실 처리
   fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount);
@@ -916,7 +941,7 @@ function assignAll(input) {
     }
   }
 
-  return { data, slots, workload, roleCounts, forbiddenViolations };
+  return { data, slots, workload, roleCounts, forbiddenViolations, roomShortages };
 }
 
 /**
@@ -956,4 +981,5 @@ export {
   disperseWorkload,
   parseRequirementsCSV,
   distributeQuota,
+  assignRooms,
 };

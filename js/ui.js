@@ -445,7 +445,9 @@ async function runAssign() {
     state.workload = result.workload;
     state.roleCounts = result.roleCounts;
 
-    if (result.forbiddenViolations.length > 0) {
+    if (result.roomShortages.length > 0) {
+      toast(`⚠️ 고사실 칸보다 배정인원이 많아 ${result.roomShortages.length}자리 미배정 — 배정설정의 보직별 합계를 확인하세요`, 6000);
+    } else if (result.forbiddenViolations.length > 0) {
       toast(`⚠️ 배정불가 고사실 ${result.forbiddenViolations.length}건 미해결 — 빨간 셀 확인`, 5000);
     } else {
       toast('✅ 배정 완료');
