@@ -11,27 +11,25 @@ const ROLE_COLORS = {
   5: '#e0d5c6',
 };
 
-// 출력물에서만 보직명을 줄여서 표시 (정감독→정, 부감독→부). 등록 안 된 이름은 그대로 둔다.
 function abbreviateRole(name) {
   if (name === '정감독') return '정';
   if (name === '부감독') return '부';
   return name ?? '';
 }
 
-// 인쇄용 교사명 정규화: (순회), (보건), (음악) 등 괄호 정보 제거
 function stripParens(name) {
   return String(name ?? '').replace(/\s*[\(（][^\)）]*[\)）]/g, '').trim();
 }
 
+// 고사실 헤더용: 괄호를 <span class="paren">으로 감싸 눕힘 처리
+// ponytail: text-orientation:upright(직립)에서 괄호만 mixed(눕힘)로 바꾸려면
+//   해당 문자를 별도 span으로 감싸는 수밖에 없다.
+function wrapParens(str) {
+  return String(str).replace(/[()（）]/g, c => `<span class="paren">${c}</span>`);
+}
+
 // ─── 감독표(전체) HTML 생성 ───────────────────────────────────────────────────
 
-/**
- * 전체 감독표 HTML 생성
- * - 날짜열 제거, 대신 표 위에 날짜를 제목으로 출력
- * - 고사실명이 숫자로만 이루어진 경우 세로쓰기(writing-mode)로 모든 digit이 아래로 나오게 함
- * - letter-spacing을 줄여 셀 높이 절약
- * - 헤더 배경: rgba(0,0,0,0.3), 폰트: 검정(#000)
- */
 function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
   const tCount = teachers.length;
   const roleCount = roles.length;
@@ -39,22 +37,19 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
   const slotMap = {};
   slots.forEach((s, idx) => { slotMap[`${s.dayIdx}_${s.period}`] = idx + 1; });
 
-  // 헤더 배경: 투명도 70% 검정(옅은 회색), 폰트는 검정
   const headerBg = 'rgba(0,0,0,0.3)';
 
   const dayTables = examDays.map((day, di) => {
     const dayIdx = di + 1;
     const periods = [];
     for (let p = day.startPeriod; p <= day.endPeriod; p++) periods.push(p);
-    const totalRows = periods.length * roleCount;
 
-    // 날짜를 표 위 제목으로 — 날짜열은 표에서 제거
     const dayTitle = `<div class="day-title">${formatDate(day.date)} 감독 배정표</div>`;
 
     let tableHtml = `<table class="print-table" border="1" cellspacing="0" cellpadding="4">
       <thead><tr style="background:${headerBg};color:#000">
         <th class="h-text">교시</th><th class="h-text">보직</th>
-        ${rooms.map(r => `<th>${r.replace(/[()（）]/g, c => `<span class="paren">${c}</span>`)}</th>`).join('')}
+        ${rooms.map(r => `<th>${wrapParens(r)}</th>`).join('')}
         <th class="h-text">합계</th>
       </tr></thead><tbody>`;
 
@@ -78,7 +73,6 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
 
         const bg = ROLE_COLORS[r] || '#fff';
         tableHtml += `<tr style="background:${bg}">`;
-        // 날짜열 제거 — 교시는 보직 수만큼 rowspan
         if (r === 1) tableHtml += `<td rowspan="${roleCount}">${p}교시</td>`;
         tableHtml += `<td>${abbreviateRole(roles[r - 1]?.name)}</td>
           ${rooms.map(room => `<td>${(cellMap[room] || []).join('<br>')}</td>`).join('')}
@@ -96,12 +90,6 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
 
 // ─── 개인 시간표 HTML ─────────────────────────────────────────────────────────
 
-/**
- * 개인 시간표 HTML
- * - 짝수 번째 시험일(di % 2 === 1)의 모든 행: rgba(0,0,0,0.15) 배경
- * - 날짜 rowspan td에도 같은 배경 적용
- * - 헤더 배경: rgba(0,0,0,0.3), 폰트: 검정(#000)
- */
 function buildPersonalTableHTML({ data, slots, teacher, teacherIdx, roles, examDays }) {
   const headerBg = 'rgba(0,0,0,0.3)';
 
@@ -112,8 +100,6 @@ function buildPersonalTableHTML({ data, slots, teacher, teacherIdx, roles, examD
     <tbody>`;
 
   examDays.forEach((day, di) => {
-    // ponytail: di % 2 === 1 → 두 번째, 네 번째… 시험일 = "짝수 번째"
-    // rowspan td와 일반 td 모두 동일한 style을 써야 배경이 날짜 칸에도 적용됨
     const evenBg = di % 2 === 1 ? 'background:rgba(0,0,0,0.15)' : '';
 
     const periods = [];
@@ -127,7 +113,6 @@ function buildPersonalTableHTML({ data, slots, teacher, teacherIdx, roles, examD
       const roleName = roleIdx > 0 ? abbreviateRole(roles[roleIdx - 1]?.name) : '';
 
       html += `<tr>`;
-      // 날짜 칸도 같은 배경을 명시적으로 지정해야 rowspan 셀에도 적용됨
       if (pi === 0) html += `<td rowspan="${periods.length}" style="${evenBg}">${formatDate(day.date)}</td>`;
       html += `<td style="${evenBg}">${p}교시</td>`;
       html += `<td style="${evenBg}">${room}</td>`;
@@ -165,33 +150,32 @@ function printElement(html, title = '감독표', isFullTable = false) {
       width: 100%;
       table-layout: fixed;
     }
-    /* 숫자로만 된 고사실명: 모든 digit이 세로로 쌓이도록 */
-    /* ponytail: writing-mode:vertical-rl은 글자를 오른쪽→왼쪽으로 쌓아
-       text-orientation:mixed와 함께 쓰면 숫자도 눕지 않고 세로로 나옴.
-       글자 간격도 -0.05em으로 좁힘. */
+    /* 고사실 헤더: 세로쓰기 + 직립(숫자·한글 모두 세로로 쌓임)
+       ponytail: 세로쓰기에서 letter-spacing은 글자 사이 세로 간격.
+         0이나 음수면 글자끼리 겹치므로 반드시 normal(브라우저 기본값)로 둔다. */
     .print-table th {
       writing-mode: vertical-rl;
       text-orientation: upright;
-      letter-spacing: -0.1em;
+      letter-spacing: normal;
       white-space: nowrap;
       padding: 4px 2px;
-    }
-    /* 괄호는 세로쓰기에서 눕혀서 표시 */
-    .print-table th span.paren {
-      text-orientation: mixed;
-      display: inline-block;
-    }
-    /* 교시·보직·합계 열은 세로쓰기 불필요, 별도 class로 override */
-    .print-table th.h-text {
-      writing-mode: horizontal-tb;
-      letter-spacing: normal;
-    }
-    .print-table td, .print-table th {
-      overflow: hidden;
       font-size: 9px;
     }
+    /* 괄호만 눕힘 */
+    .print-table th span.paren {
+      text-orientation: mixed;
+    }
+    /* 교시·보직·합계 열: 가로쓰기 */
+    .print-table th.h-text {
+      writing-mode: horizontal-tb;
+      text-orientation: mixed;
+      letter-spacing: normal;
+    }
+    /* 교사명 데이터 셀: 겹치지 않는 선에서 살짝 좁힘 */
     .print-table td {
-      letter-spacing: -0.1em;
+      overflow: hidden;
+      font-size: 9px;
+      letter-spacing: -0.05em;
     }
   ` : `
     @page { size: landscape; margin: 12mm; }
