@@ -38,12 +38,17 @@
       <h2>👩‍🏫 감독교사 목록</h2>
       <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn-primary" onclick="addTeacher()">+ 교사 추가</button>
+        <button class="btn-outline" onclick="autoFillQuota()">⚡ 배정시간 자동채우기</button>
         <label class="btn-outline" style="padding:5px 12px;cursor:pointer">
           📂 CSV 가져오기
           <input type="file" accept=".csv" onchange="handleTeacherCSV(event)" style="display:none">
         </label>
+        <button class="btn-outline" onclick="downloadTeacherCSVTemplate()">⬇ CSV 양식 다운로드</button>
       </div>
-      <p class="csv-hint">CSV 형식: <code>이름,이전누적업무강도</code> (첫 줄은 헤더)</p>
+      <p class="csv-hint">
+        CSV 4열: <code>이름, 이전누적업무강도, 배정불가고사실, 못들어가는시간</code><br>
+        못들어가는시간 형식: <code>일차-교시</code> 쉼표 구분 (예: <code>1-1,2-3</code> = 1일차1교시, 2일차3교시)
+      </p>
       <div style="overflow-x:auto;margin-top:8px">
         <table>
           <thead>
@@ -52,6 +57,7 @@
               <th>배정할시간</th>
               <th>이전누적강도</th>
               <th>배정불가고사실</th>
+              <th>못들어가는시간</th>
               <th></th>
             </tr>
           </thead>
@@ -70,6 +76,7 @@
           📂 CSV
           <input type="file" accept=".csv" onchange="handleRoomCSV(event)" style="display:none">
         </label>
+        <button class="btn-outline" onclick="downloadRoomCSVTemplate()">⬇ CSV 양식</button>
       </div>
       <p class="csv-hint">CSV 형식: <code>고사실명</code> (첫 줄은 헤더)</p>
       <div id="room-list" style="margin-top:8px"></div>
