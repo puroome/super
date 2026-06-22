@@ -134,6 +134,33 @@ function parseRequirementsCSV(text, examDays, roles) {
   return { roomRequirements, errors };
 }
 
+/**
+ * 배정할시간 라운드로빈 분배 (순수 함수, DOM/state 의존 없음)
+ * 원본 엑셀 "배정할시간자동채우기"와 동일한 로직:
+ *   배열 앞쪽(index 0 = 어린 교사)부터 1씩 채우고, maxPossible[i] 한도를 넘지 않는다.
+ *   한 바퀴를 돌아도 아무도 못 채우면(모두 한도 도달) 중단.
+ * @param {number} totalNeed 총 필요시간
+ * @param {number[]} maxPossible 교사별 최대가능시간 (= 전체교시수 - 못들어가는시간수)
+ * @returns {{quota: number[], total: number}} quota: 교사별 배정시간, total: 실제 배분된 합
+ */
+function distributeQuota(totalNeed, maxPossible) {
+  const n = maxPossible.length;
+  const quota = new Array(n).fill(0);
+  let total = 0, i = 0, noProgress = 0;
+  while (total < totalNeed && n > 0) {
+    if (quota[i] < maxPossible[i]) {
+      quota[i]++;
+      total++;
+      noProgress = 0;
+    } else {
+      noProgress++;
+      if (noProgress >= n) break;
+    }
+    i = (i + 1) % n;
+  }
+  return { quota, total };
+}
+
 // ─── P값 기반 배정 ────────────────────────────────────────────────────────────
 
 function calcPValues(data, fixedMap, slots, teachers, slotNeeds) {
@@ -928,4 +955,5 @@ export {
   calcRoleCounts,
   disperseWorkload,
   parseRequirementsCSV,
+  distributeQuota,
 };

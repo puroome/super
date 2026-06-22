@@ -3,7 +3,7 @@
 import {
   assignAll, swapCells, validateAssignment,
   buildSlots, extractRole, extractRoom, calcRoleCounts,
-  parseRequirementsCSV,
+  parseRequirementsCSV, distributeQuota,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
@@ -102,10 +102,14 @@ function parseRequiredSlots(slotStr, roleStr, slots) {
   });
 }
 
-// 배정할 시간 자동채우기: 총 필요시간을 교사수로 균등 분배
+// 배정할 시간 자동채우기
+// ponytail: 원본 엑셀(c감독배정생성.bas의 "배정할시간자동채우기")과 동일한 라운드로빈.
+//   교사 목록 위(어린 교사)부터 1시간씩 순서대로 채우고, "못들어가는시간" 개수만큼 개인 한도를 둔다.
+//   균등분배가 안 될 때는 위쪽(어린) 교사가 자투리 1시간을 더 받는다.
+// @returns {number} 실제로 배분된 시간 (totalNeed에 못 미치면 한도초과)
 function autoFillQuota() {
   const slots = buildSlots(state.examDays);
-  if (!slots.length || !state.teachers.length) { toast('시험 날짜와 교사를 먼저 입력하세요.'); return; }
+  if (!slots.length || !state.teachers.length) { toast('시험 날짜와 교사를 먼저 입력하세요.'); return 0; }
 
   // 슬롯별 필요인원 합계
   const slotNeeds = {};
@@ -115,14 +119,24 @@ function autoFillQuota() {
   });
   const totalNeed = Object.values(slotNeeds).reduce((s, v) => s + v, 0);
 
-  if (totalNeed === 0) { toast('배정설정 탭에서 필요인원을 먼저 입력하세요.'); return; }
+  if (totalNeed === 0) { toast('배정설정 탭에서 필요인원을 먼저 입력하세요.'); return 0; }
 
   const n = state.teachers.length;
-  const base = Math.floor(totalNeed / n);
-  const remainder = totalNeed % n;
-  state.teachers.forEach((t, i) => { t.quota = base + (i < remainder ? 1 : 0); });
+  const sCount = slots.length;
+  const maxPossible = state.teachers.map(t =>
+    sCount - parseUnavailableSlots(t.unavailableSlots || '', slots).length
+  );
+
+  const { quota, total } = distributeQuota(totalNeed, maxPossible);
+  state.teachers.forEach((t, idx) => { t.quota = quota[idx]; });
   renderTeacherList();
-  toast(`총 ${totalNeed}시간 → 교사 ${n}명에게 자동 배분 완료`);
+
+  if (total < totalNeed) {
+    toast(`⚠️ 최대 가능 시간 초과로 ${totalNeed - total}시간을 배정하지 못했습니다.`, 4000);
+  } else {
+    toast(`총 ${totalNeed}시간 → 교사 ${n}명에게 자동 배분 완료`);
+  }
+  return total;
 }
 
 function renderRoomList() {
@@ -398,6 +412,10 @@ async function runAssign() {
   btn.textContent = '배정 중...';
 
   try {
+    // ponytail: 원본 엑셀처럼 "배정할시간"을 따로 입력하지 않아도 되도록,
+    //   아무도 손대지 않은 상태(전부 0)면 자동배정 직전에 자동 채우기를 먼저 실행한다.
+    if (state.teachers.every(t => !t.quota)) autoFillQuota();
+
     // 사전 검증
     const slots = buildSlots(state.examDays);
     const slotNeeds = {};
