@@ -150,13 +150,15 @@ function printElement(html, title = '감독표', isFullTable = false) {
       width: 100%;
       table-layout: fixed;
     }
-    /* 고사실 헤더: 세로쓰기 + 직립(숫자·한글 모두 세로로 쌓임)
-       ponytail: 세로쓰기에서 letter-spacing은 글자 사이 세로 간격.
-         0이나 음수면 글자끼리 겹치므로 반드시 normal(브라우저 기본값)로 둔다. */
+    /* 고사실 헤더: 세로쓰기 + 직립(숫자·한글 세로로 쌓임)
+       ponytail: 세로쓰기에서 letter-spacing = 글자 사이 '세로' 간격.
+         text-orientation:upright에서 숫자(1,0…)는 좁은 가로폭이 세로 간격으로
+         쓰여 글자가 겹친다(normal=0이라 안 벌어짐). 양수로 강제로 벌려야 한다.
+         3px ≈ 한글은 살짝 여유·숫자는 안 겹침. 숫자가 여전히 닿으면 이 값을 키울 것. */
     .print-table th {
       writing-mode: vertical-rl;
       text-orientation: upright;
-      letter-spacing: normal;
+      letter-spacing: 3px;
       line-height: 1.8;
       white-space: nowrap;
       padding: 4px 2px;
@@ -166,17 +168,18 @@ function printElement(html, title = '감독표', isFullTable = false) {
     .print-table th span.paren {
       text-orientation: mixed;
     }
-    /* 교시·보직·합계 열: 가로쓰기 */
+    /* 교시·보직·합계 열: 가로쓰기 (세로 간격 보정 불필요) */
     .print-table th.h-text {
       writing-mode: horizontal-tb;
       text-orientation: mixed;
       letter-spacing: normal;
     }
-    /* 교사명 데이터 셀: 겹치지 않는 선에서 살짝 좁힘 */
+    /* 교사명 데이터 셀: 가로쓰기. 좁은 칸에 이름을 더 잘 욱여넣도록 살짝 더 좁힘.
+       ponytail: 한글은 자체 여백이 있어 -0.1em까지는 안 겹친다. 더 줄이면 위험. */
     .print-table td {
       overflow: hidden;
       font-size: 9px;
-      letter-spacing: -0.05em;
+      letter-spacing: -0.1em;
     }
   ` : `
     @page { size: landscape; margin: 12mm; }
