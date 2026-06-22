@@ -19,7 +19,6 @@ function abbreviateRole(name) {
 }
 
 // 인쇄용 교사명 정규화: (순회), (보건), (음악) 등 괄호 정보 제거
-// ponytail: 한글·영문 괄호 모두 제거. 괄호가 중첩되거나 내용이 비어있어도 안전하게 처리됨.
 function stripParens(name) {
   return String(name ?? '').replace(/\s*[\(（][^\)）]*[\)）]/g, '').trim();
 }
@@ -28,16 +27,10 @@ function stripParens(name) {
 
 /**
  * 전체 감독표 HTML 생성
- * 날짜별로 표를 따로 만들어 인쇄 시 한 페이지에 하루씩 나오게 한다.
- * 같은 날짜/같은 교시 행은 rowspan으로 묶어 칸 사이에 선이 끼지 않게 한다.
- *
- * 인쇄 시 하루치 표가 정확히 한 페이지에 들어가도록 각 표를 .day-page 컨테이너로 감싸고,
- * CSS transform:scale()로 가로·세로 모두 페이지 안에 맞게 줄인다.
- * ponytail: scale 계산은 브라우저 인쇄 엔진에서 실행되므로 JS로 동적 계산하지 않고
- *   "인쇄 영역 대비 표 크기" 비율을 CSS에서 처리한다.
- *   실제 fit-to-page는 CSS @page + .day-page 높이 100vh + overflow:hidden 조합으로 구현.
- *   표가 매우 좁거나(고사실 3개 미만) 매우 넓은(고사실 20개 이상) 극단 케이스는
- *   브라우저 인쇄 대화상자의 "페이지에 맞춤" 옵션으로 보완을 권장한다.
+ * - 날짜열 제거, 대신 표 위에 날짜를 제목으로 출력
+ * - 고사실명이 숫자로만 이루어진 경우 세로쓰기(writing-mode)로 모든 digit이 아래로 나오게 함
+ * - letter-spacing을 줄여 셀 높이 절약
+ * - 헤더 배경: rgba(0,0,0,0.3), 폰트: 검정(#000)
  */
 function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
   const tCount = teachers.length;
@@ -46,20 +39,23 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
   const slotMap = {};
   slots.forEach((s, idx) => { slotMap[`${s.dayIdx}_${s.period}`] = idx + 1; });
 
+  // 헤더 배경: 투명도 70% 검정(옅은 회색), 폰트는 검정
+  const headerBg = 'rgba(0,0,0,0.3)';
+
   const dayTables = examDays.map((day, di) => {
     const dayIdx = di + 1;
     const periods = [];
     for (let p = day.startPeriod; p <= day.endPeriod; p++) periods.push(p);
     const totalRows = periods.length * roleCount;
 
-    // 헤더 배경: rgba(0,0,0,0.3) = 투명도 70% 검정 (옅은 회색)
-    const headerBg = 'rgba(0,0,0,0.3)';
+    // 날짜를 표 위 제목으로 — 날짜열은 표에서 제거
+    const dayTitle = `<div class="day-title">${formatDate(day.date)} 감독 배정표</div>`;
 
     let tableHtml = `<table class="print-table" border="1" cellspacing="0" cellpadding="4">
-      <thead><tr style="background:${headerBg};color:#fff">
-        <th>날짜</th><th>교시</th><th>보직</th>
+      <thead><tr style="background:${headerBg};color:#000">
+        <th class="h-text">교시</th><th class="h-text">보직</th>
         ${rooms.map(r => `<th>${r}</th>`).join('')}
-        <th>합계</th>
+        <th class="h-text">합계</th>
       </tr></thead><tbody>`;
 
     periods.forEach((p, pi) => {
@@ -82,7 +78,7 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
 
         const bg = ROLE_COLORS[r] || '#fff';
         tableHtml += `<tr style="background:${bg}">`;
-        if (pi === 0 && r === 1) tableHtml += `<td rowspan="${totalRows}">${formatDate(day.date)}</td>`;
+        // 날짜열 제거 — 교시는 보직 수만큼 rowspan
         if (r === 1) tableHtml += `<td rowspan="${roleCount}">${p}교시</td>`;
         tableHtml += `<td>${abbreviateRole(roles[r - 1]?.name)}</td>
           ${rooms.map(room => `<td>${(cellMap[room] || []).join('<br>')}</td>`).join('')}
@@ -92,9 +88,7 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
     });
 
     tableHtml += `</tbody></table>`;
-
-    // .day-page: 하루치 표를 한 인쇄 페이지 안에 가두는 컨테이너
-    return `<div class="day-page">${tableHtml}</div>`;
+    return `<div class="day-page">${dayTitle}${tableHtml}</div>`;
   });
 
   return dayTables.join('');
@@ -104,8 +98,9 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
 
 /**
  * 개인 시간표 HTML
- * 짝수 번째 시험일(0-based index 1, 3, 5…)은 배경을 rgba(0,0,0,0.15) ≒ 투명도 85% 검정으로.
- * 보직이 없는 칸(roleIdx===0)은 비워서 보여주고, 같은 날짜 행은 rowspan으로 묶는다.
+ * - 짝수 번째 시험일(di % 2 === 1)의 모든 행: rgba(0,0,0,0.15) 배경
+ * - 날짜 rowspan td에도 같은 배경 적용
+ * - 헤더 배경: rgba(0,0,0,0.3), 폰트: 검정(#000)
  */
 function buildPersonalTableHTML({ data, slots, teacher, teacherIdx, roles, examDays }) {
   const headerBg = 'rgba(0,0,0,0.3)';
@@ -113,13 +108,13 @@ function buildPersonalTableHTML({ data, slots, teacher, teacherIdx, roles, examD
   let html = `<div class="personal-table">
     <h3>${stripParens(teacher.name)} 선생님 개인 시간표</h3>
     <table border="1" cellspacing="0" cellpadding="6">
-    <thead><tr style="background:${headerBg};color:#fff"><th>날짜</th><th>교시</th><th>고사장</th><th>보직</th></tr></thead>
+    <thead><tr style="background:${headerBg};color:#000"><th>날짜</th><th>교시</th><th>고사장</th><th>보직</th></tr></thead>
     <tbody>`;
 
   examDays.forEach((day, di) => {
-    // 짝수 번째 날짜(1번째, 3번째…, 0-based index 1, 3)에 배경색 적용
-    // ponytail: di % 2 === 1 이 "두 번째, 네 번째…" = 짝수 번째
-    const rowBg = di % 2 === 1 ? 'background:rgba(0,0,0,0.15)' : '';
+    // ponytail: di % 2 === 1 → 두 번째, 네 번째… 시험일 = "짝수 번째"
+    // rowspan td와 일반 td 모두 동일한 style을 써야 배경이 날짜 칸에도 적용됨
+    const evenBg = di % 2 === 1 ? 'background:rgba(0,0,0,0.15)' : '';
 
     const periods = [];
     for (let p = day.startPeriod; p <= day.endPeriod; p++) periods.push(p);
@@ -131,9 +126,13 @@ function buildPersonalTableHTML({ data, slots, teacher, teacherIdx, roles, examD
       const room = roleIdx > 0 ? extractRoom(cell) : '';
       const roleName = roleIdx > 0 ? abbreviateRole(roles[roleIdx - 1]?.name) : '';
 
-      html += `<tr style="${rowBg}">`;
-      if (pi === 0) html += `<td rowspan="${periods.length}">${formatDate(day.date)}</td>`;
-      html += `<td>${p}교시</td><td>${room}</td><td>${roleName}</td></tr>`;
+      html += `<tr>`;
+      // 날짜 칸도 같은 배경을 명시적으로 지정해야 rowspan 셀에도 적용됨
+      if (pi === 0) html += `<td rowspan="${periods.length}" style="${evenBg}">${formatDate(day.date)}</td>`;
+      html += `<td style="${evenBg}">${p}교시</td>`;
+      html += `<td style="${evenBg}">${room}</td>`;
+      html += `<td style="${evenBg}">${roleName}</td>`;
+      html += `</tr>`;
     });
   });
 
@@ -143,35 +142,49 @@ function buildPersonalTableHTML({ data, slots, teacher, teacherIdx, roles, examD
 
 // ─── 인쇄 ────────────────────────────────────────────────────────────────────
 
-/**
- * 보이지 않는 iframe에 인쇄용 HTML을 그려서 바로 인쇄 대화상자를 띄운다.
- */
 function printElement(html, title = '감독표', isFullTable = false) {
   const iframe = document.createElement('iframe');
   iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
   document.body.appendChild(iframe);
 
-  // 전체감독표 전용 CSS: .day-page를 정확히 한 인쇄 페이지에 맞춤
-  // ponytail: fit-content를 위해 transform-origin:top left + scale(1) 기본값을 두고,
-  //   실제 축소는 브라우저의 "페이지에 맞춤" 인쇄 옵션에 위임한다.
-  //   day-page에 page-break-after:always를 걸어 하루치가 반드시 새 페이지로 넘어가게 한다.
-  //   overflow:hidden으로 표가 컨테이너 밖으로 삐져나가지 않게 막는다.
   const fullTableStyles = isFullTable ? `
     @page { size: landscape; margin: 8mm; }
     .day-page {
       page-break-after: always;
       page-break-inside: avoid;
       width: 100%;
-      overflow: hidden;
     }
     .day-page:last-child { page-break-after: auto; }
+    .day-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 4px;
+    }
     .print-table {
       width: 100%;
       table-layout: fixed;
     }
+    /* 숫자로만 된 고사실명: 모든 digit이 세로로 쌓이도록 */
+    /* ponytail: writing-mode:vertical-rl은 글자를 오른쪽→왼쪽으로 쌓아
+       text-orientation:mixed와 함께 쓰면 숫자도 눕지 않고 세로로 나옴.
+       글자 간격도 -0.05em으로 좁힘. */
+    .print-table th {
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      letter-spacing: -0.05em;
+      white-space: nowrap;
+      padding: 4px 2px;
+    }
+    /* 교시·보직·합계 열은 세로쓰기 불필요, 별도 class로 override */
+    .print-table th.h-text {
+      writing-mode: horizontal-tb;
+      letter-spacing: normal;
+    }
     .print-table td, .print-table th {
-      word-break: break-all;
       overflow: hidden;
+      font-size: 9px;
+      letter-spacing: -0.05em;
     }
   ` : `
     @page { size: landscape; margin: 12mm; }
@@ -187,7 +200,7 @@ function printElement(html, title = '감독표', isFullTable = false) {
     <style>
       body { font-family: 'Malgun Gothic', sans-serif; font-size: 11px; margin: 0; }
       table { border-collapse: collapse; width: 100%; }
-      th, td { border: 1px solid #888; padding: 3px 6px; text-align: center; }
+      th, td { border: 1px solid #888; padding: 3px 6px; text-align: center; vertical-align: middle; }
       th { font-weight: 600; }
       h3 { font-size: 13px; margin-bottom: 6px; }
       ${fullTableStyles}
@@ -201,23 +214,14 @@ function printElement(html, title = '감독표', isFullTable = false) {
   setTimeout(() => { if (iframe.parentNode) iframe.remove(); }, 60000);
 }
 
-/**
- * 전체 감독표 인쇄 (날짜별로 페이지 분리, 가로방향)
- */
 function printFullTable(params) {
   printElement(buildFullTableHTML(params), '감독표(전체)', true);
 }
 
-/**
- * 특정 교사 개인 시간표 인쇄
- */
 function printPersonalTable(params) {
   printElement(buildPersonalTableHTML(params), `${stripParens(params.teacher.name)} 개인시간표`, false);
 }
 
-/**
- * 전체 교사 개인 시간표 일괄 인쇄
- */
 function printAllPersonal({ data, slots, teachers, roles, examDays }) {
   const html = teachers.map((teacher, idx) =>
     buildPersonalTableHTML({ data, slots, teacher, teacherIdx: idx + 1, roles, examDays })

@@ -186,7 +186,7 @@ function renderRequirementsTab() {
         html += `<tr>
           <td>${r === 0 && p === day.startPeriod ? formatDate(day.date) : ''}</td>
           <td>${r === 0 ? p + '교시' : ''}</td>
-          <td style="background:${ROLE_COLORS[roleIdx]}">${state.roles[r].name}</td>
+          <td style="background:${ROLE_COLORS[roleIdx]}">${abbreviateRoleForUI(state.roles[r].name)}</td>
           ${state.rooms.map(room => {
             const existing = state.roomRequirements.find(
               x => x.dayIdx === dayIdx && x.period === p && x.roleIdx === roleIdx && x.roomName === room
@@ -258,10 +258,11 @@ function importRequirementsCSV(text) {
     alert('⚠️ CSV 파일에 오류가 있습니다. 수정 후 다시 업로드해주세요.\n\n' + errors.join('\n'));
     return;
   }
+  // ponytail: 기존 배정설정 완전히 교체 — 덮어쓰기(merge) 아님
   state.roomRequirements = roomRequirements;
   syncRequirements();
   renderRequirementsTab();
-  toast('배정감독수 가져오기 완료');
+  toast('배정감독수 가져오기 완료 (기존 설정 교체)');
 }
 
 // ─── 탭3: 자동배정 ───────────────────────────────────────────────────────────
@@ -622,7 +623,38 @@ async function deleteNamedConfirm(id) {
 
 // ─── CSV 가져오기 ─────────────────────────────────────────────────────────────
 
+// 배정설정 탭 보직열 축약 표시 (정감독→정, 부감독→부)
+function abbreviateRoleForUI(name) {
+  if (name === '정감독') return '정';
+  if (name === '부감독') return '부';
+  return name;
+}
+
+// 개별 섹션 초기화
+// ponytail: 'requirements'는 roomRequirements와 requirements 둘 다 비워야 배정설정이 완전히 사라짐
+function resetSection(section) {
+  const labels = {
+    examDays: '시험 날짜 및 교시',
+    teachers: '감독교사 목록',
+    rooms: '고사실 목록',
+    roles: '보직 및 업무강도',
+    requirements: '배정설정',
+  };
+  if (!confirm(`"${labels[section] ?? section}" 데이터를 초기화합니다. 계속할까요?`)) return;
+  if (section === 'examDays') { state.examDays = []; renderExamDayList(); }
+  else if (section === 'teachers') { state.teachers = []; renderTeacherList(); }
+  else if (section === 'rooms') { state.rooms = []; renderRoomList(); }
+  else if (section === 'roles') { state.roles = []; renderRoleList(); }
+  else if (section === 'requirements') {
+    state.requirements = [];
+    state.roomRequirements = [];
+    renderRequirementsTab();
+  }
+  toast(`${labels[section] ?? section} 초기화 완료`);
+}
+
 function importTeacherCSV(text) {
+  // ponytail: 기존 목록을 완전히 교체 — 덮어쓰기(merge) 아님
   const lines = text.trim().split('\n');
   const dataLines = lines.slice(1).filter(l => l.trim());
   const errors = [];
@@ -677,22 +709,20 @@ function importTeacherCSV(text) {
 }
 
 function importRoomCSV(text) {
+  // ponytail: 기존 목록을 완전히 교체 — 덮어쓰기(merge) 아님
   const lines = text.trim().split('\n').slice(1);
   state.rooms = lines.map(l => l.trim()).filter(Boolean);
   renderRoomList();
-  toast(`고사실 ${state.rooms.length}개 가져오기 완료`);
+  toast(`고사실 ${state.rooms.length}개 가져오기 완료 (기존 목록 교체)`);
 }
 
 function downloadTeacherCSVTemplate() {
   const header = '이름,이전누적업무강도,배정불가고사실(세미콜론구분),못들어가는시간(일차_교시_세미콜론구분),반드시들어가야하는시간(일차_교시_세미콜론구분),감독유형(1정감독2부감독_세미콜론구분)';
-  const example = '홍길동,0,,,,';
-  const note = '# 예시: 홍길동,150,101;201,1_3,2_1;3_2,1;2';
-  downloadCSV(header + '\n' + example + '\n' + note, '교사목록_양식.csv');
+  downloadCSV(header, '교사목록_양식.csv');
 }
 
 function downloadRoomCSVTemplate() {
-  const content = '고사실명\n101\n102\n1학년전반복도';
-  downloadCSV(content, '고사실목록_양식.csv');
+  downloadCSV('고사실명', '고사실목록_양식.csv');
 }
 
 function downloadCSV(content, filename) {
@@ -740,6 +770,7 @@ window.addExamDay = () => {
 
 window.saveAll = saveAll;
 window.resetAll = resetAll;
+window.resetSection = resetSection;
 window.saveAsNamed = saveAsNamed;
 window.openLoadModal = openLoadModal;
 window.closeLoadModal = closeLoadModal;
