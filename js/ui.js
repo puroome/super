@@ -13,7 +13,7 @@ import {
   clearCurrentDocs, saveNamed, listSaves, loadNamed, deleteNamed,
 } from './firebase.js';
 import {
-  printFullTable, printDailyTable, printPersonalTable, printAllPersonal,
+  printFullTable, printPersonalTable, printAllPersonal,
   formatDate, ROLE_COLORS,
 } from './print.js';
 
@@ -784,12 +784,8 @@ window.printFull = () => printFullTable({
   data: state.data, slots: state.slots, teachers: state.teachers,
   rooms: state.rooms, roles: state.roles, examDays: state.examDays,
 });
-window.printDaily = () => printDailyTable({
-  data: state.data, slots: state.slots, teachers: state.teachers,
-  rooms: state.rooms, roles: state.roles, examDays: state.examDays,
-});
-window.printPersonal = () => {
-  const idx = parseInt(document.getElementById('personal-teacher-select')?.value);
+window.printPersonalByValue = (val) => {
+  const idx = parseInt(val);
   if (!idx) return;
   printPersonalTable({
     data: state.data, slots: state.slots,
