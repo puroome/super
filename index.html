@@ -47,7 +47,8 @@
       </div>
       <p class="csv-hint">
         CSV 4열: <code>이름, 이전누적업무강도, 배정불가고사실, 못들어가는시간</code><br>
-        못들어가는시간 형식: <code>일차-교시</code> 쉼표 구분 (예: <code>1-1,2-3</code> = 1일차1교시, 2일차3교시)
+        배정불가고사실 형식: <code>101,102</code> (고사실명 쉼표 구분)<br>
+        못들어가는시간 형식: <code>일차_교시</code> 쉼표 구분 (예: <code>1_1,2_3</code> = 1일차1교시, 2일차3교시)
       </p>
       <div style="overflow-x:auto;margin-top:8px">
         <table>
@@ -70,7 +71,7 @@
     <div class="card">
       <h2>🏫 고사실 목록</h2>
       <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-        <input id="room-input" placeholder="고사실명 (예: 1-1)" style="flex:1;min-width:80px">
+        <input id="room-input" placeholder="고사실명 (예: 101)" style="flex:1;min-width:80px">
         <button class="btn-primary" onclick="addRoom()">추가</button>
         <label class="btn-outline" style="padding:5px 12px;cursor:pointer">
           📂 CSV
