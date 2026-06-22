@@ -62,19 +62,19 @@ function renderTeacherList() {
       <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
       <td><input type="number" value="${t.quota ?? 0}" onchange="updateTeacher(${i},'quota',+this.value)" style="width:50px"></td>
       <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
-      <td><input value="${t.forbiddenRooms ?? ''}" placeholder="1-1,1-2" onchange="updateTeacher(${i},'forbiddenRooms',this.value)" style="width:110px"></td>
-      <td><input value="${t.unavailableSlots ?? ''}" placeholder="1-1,2-3" title="못 들어가는 시간: 일차-교시 형식 (예: 1-1,2-3)" onchange="updateTeacher(${i},'unavailableSlots',this.value)" style="width:110px"></td>
+      <td><input value="${t.forbiddenRooms ?? ''}" placeholder="101,102" onchange="updateTeacher(${i},'forbiddenRooms',this.value)" style="width:110px"></td>
+      <td><input value="${t.unavailableSlots ?? ''}" placeholder="1_1,2_3" title="못 들어가는 시간: 일차_교시 형식 (예: 1_1,2_3)" onchange="updateTeacher(${i},'unavailableSlots',this.value)" style="width:110px"></td>
       <td><button onclick="removeTeacher(${i})">삭제</button></td>
     </tr>
   `).join('');
 }
 
-// "1-1,2-3" 형식 → 슬롯 인덱스 배열 (1-based)
-// 규칙: 일차-교시, 예) 1-1 = 첫째날 1교시
+// "1_1,2_3" 형식 → 슬롯 인덱스 배열 (1-based)
+// 규칙: 일차_교시, 예) 1_1 = 첫째날 1교시
 function parseUnavailableSlots(str, slots) {
   if (!str || !str.trim()) return [];
   return str.split(',').map(s => s.trim()).filter(Boolean).flatMap(token => {
-    const [dayPart, periodPart] = token.split('-');
+    const [dayPart, periodPart] = token.split('_');
     const dayIdx = parseInt(dayPart);
     const period = parseInt(periodPart);
     if (isNaN(dayIdx) || isNaN(period)) return [];
@@ -479,13 +479,13 @@ function importRoomCSV(text) {
 
 // CSV 양식 다운로드
 function downloadTeacherCSVTemplate() {
-  const header = '이름,이전누적업무강도,배정불가고사실(쉼표구분),못들어가는시간(일차-교시형식_쉼표구분)';
+  const header = '이름,이전누적업무강도,배정불가고사실(쉼표구분),못들어가는시간(일차_교시형식_쉼표구분)';
   const example = '홍길동,0,,';
   downloadCSV(header + '\n' + example, '교사목록_양식.csv');
 }
 
 function downloadRoomCSVTemplate() {
-  const content = '고사실명\n1-1\n1-2';
+  const content = '고사실명\n101\n102';
   downloadCSV(content, '고사실목록_양식.csv');
 }
 
