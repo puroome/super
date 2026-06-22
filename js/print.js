@@ -54,7 +54,7 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
     let tableHtml = `<table class="print-table" border="1" cellspacing="0" cellpadding="4">
       <thead><tr style="background:${headerBg};color:#000">
         <th class="h-text">교시</th><th class="h-text">보직</th>
-        ${rooms.map(r => `<th>${r}</th>`).join('')}
+        ${rooms.map(r => `<th>${r.replace(/[()（）]/g, c => `<span class="paren">${c}</span>`)}</th>`).join('')}
         <th class="h-text">합계</th>
       </tr></thead><tbody>`;
 
@@ -172,7 +172,7 @@ function printElement(html, title = '감독표', isFullTable = false) {
     .print-table th {
       writing-mode: vertical-rl;
       text-orientation: upright;
-      letter-spacing: 0;
+      letter-spacing: -0.1em;
       white-space: nowrap;
       padding: 4px 2px;
     }
@@ -189,7 +189,9 @@ function printElement(html, title = '감독표', isFullTable = false) {
     .print-table td, .print-table th {
       overflow: hidden;
       font-size: 9px;
-      letter-spacing: -0.05em;
+    }
+    .print-table td {
+      letter-spacing: -0.1em;
     }
   ` : `
     @page { size: landscape; margin: 12mm; }
