@@ -101,6 +101,39 @@ function getForbiddenRooms(teacher) {
   return parts.length ? parts : ['__none__'];
 }
 
+/**
+ * 배정감독수 CSV 파싱 (순수 함수, DOM/state 의존 없음)
+ * CSV 헤더: 날짜,교시,보직,고사실1,고사실2,...
+ * 날짜/보직명은 examDays/roles에 등록된 값과 정확히 일치해야 매칭됨
+ * @returns {{roomRequirements: Array, errors: string[]}}
+ */
+function parseRequirementsCSV(text, examDays, roles) {
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  const header = lines[0].split(',').map(s => s.trim());
+  const roomCols = header.slice(3);
+  const errors = [];
+  const roomRequirements = [];
+
+  lines.slice(1).forEach((line, rowIdx) => {
+    const parts = line.split(',').map(s => s.trim());
+    const [dateStr, periodStr, roleName] = parts;
+    const counts = parts.slice(3);
+    const dayIdx = examDays.findIndex(d => d.date === dateStr) + 1;
+    const period = parseInt(periodStr);
+    const roleIdx = roles.findIndex(r => r.name === roleName) + 1;
+
+    if (!dayIdx) { errors.push(`${rowIdx + 2}행: 날짜 "${dateStr}"가 기본정보에 없습니다.`); return; }
+    if (!roleIdx) { errors.push(`${rowIdx + 2}행: 보직 "${roleName}"이 기본정보에 없습니다.`); return; }
+
+    roomCols.forEach((room, ci) => {
+      const count = parseInt(counts[ci]) || 0;
+      if (count > 0) roomRequirements.push({ dayIdx, period, roleIdx, roomName: room, count });
+    });
+  });
+
+  return { roomRequirements, errors };
+}
+
 // ─── P값 기반 배정 ────────────────────────────────────────────────────────────
 
 function calcPValues(data, fixedMap, slots, teachers, slotNeeds) {
@@ -894,4 +927,5 @@ export {
   extractRoom,
   calcRoleCounts,
   disperseWorkload,
+  parseRequirementsCSV,
 };

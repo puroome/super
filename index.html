@@ -123,6 +123,18 @@
     <p style="margin-bottom:10px;color:#7a8599;font-size:12px">
       각 날짜/교시/보직별로 고사실에 몇 명을 배정할지 입력하세요.
     </p>
+    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      <label class="btn-outline" style="padding:5px 12px;cursor:pointer">
+        📂 CSV 가져오기
+        <input type="file" accept=".csv" onchange="handleRequirementsCSV(event)" style="display:none">
+      </label>
+      <button class="btn-outline" onclick="downloadRequirementsCSVTemplate()">⬇ CSV 양식 다운로드</button>
+    </div>
+    <p class="csv-hint">
+      CSV 형식: <code>날짜,교시,보직,고사실1,고사실2,...</code> (첫 줄은 헤더)<br>
+      날짜·보직명은 기본정보 탭에 등록된 값과 <strong>정확히 일치</strong>해야 합니다.<br>
+      ⬇ 버튼으로 현재 값이 채워진 양식을 받아 엑셀에서 수정 후 다시 가져오세요.
+    </p>
     <div id="req-table-wrap" style="overflow-x:auto"></div>
   </div>
 </div>

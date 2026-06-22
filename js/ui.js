@@ -2,7 +2,8 @@
 
 import {
   assignAll, swapCells, validateAssignment,
-  buildSlots, extractRole, extractRoom, calcRoleCounts
+  buildSlots, extractRole, extractRoom, calcRoleCounts,
+  parseRequirementsCSV,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
@@ -222,6 +223,40 @@ function syncRequirements() {
     const [dayIdx, period, roleIdx] = key.split('_').map(Number);
     state.requirements.push({ dayIdx, period, roleIdx, count });
   }
+}
+
+// 현재 배정설정 값을 CSV로 내려받기 (엑셀에서 수정 후 재업로드용 양식)
+function downloadRequirementsCSVTemplate() {
+  if (!state.examDays.length || !state.roles.length || !state.rooms.length) {
+    toast('기본정보(날짜/보직/고사실)를 먼저 입력하세요.'); return;
+  }
+  const rows = [['날짜', '교시', '보직', ...state.rooms]];
+  state.examDays.forEach((day, di) => {
+    for (let p = day.startPeriod; p <= day.endPeriod; p++) {
+      state.roles.forEach((role, ri) => {
+        const roleIdx = ri + 1;
+        const counts = state.rooms.map(room => {
+          const found = state.roomRequirements.find(x =>
+            x.dayIdx === di + 1 && x.period === p && x.roleIdx === roleIdx && x.roomName === room);
+          return found?.count ?? 0;
+        });
+        rows.push([day.date, p, role.name, ...counts]);
+      });
+    }
+  });
+  downloadCSV(rows.map(r => r.join(',')).join('\n'), '배정감독수_양식.csv');
+}
+
+function importRequirementsCSV(text) {
+  const { roomRequirements, errors } = parseRequirementsCSV(text, state.examDays, state.roles);
+  if (errors.length > 0) {
+    alert('⚠️ CSV 파일에 오류가 있습니다. 수정 후 다시 업로드해주세요.\n\n' + errors.join('\n'));
+    return;
+  }
+  state.roomRequirements = roomRequirements;
+  syncRequirements();
+  renderRequirementsTab();
+  toast('배정감독수 가져오기 완료');
 }
 
 // ─── 탭3: 자동배정 ───────────────────────────────────────────────────────────
@@ -597,6 +632,7 @@ window.doSwap = doSwap;
 window.autoFillQuota = autoFillQuota;
 window.downloadTeacherCSVTemplate = downloadTeacherCSVTemplate;
 window.downloadRoomCSVTemplate = downloadRoomCSVTemplate;
+window.downloadRequirementsCSVTemplate = downloadRequirementsCSVTemplate;
 
 window.showRequirementsTab = renderRequirementsTab;
 
@@ -631,6 +667,11 @@ window.handleRoomCSV = (e) => {
   const file = e.target.files[0];
   if (!file) return;
   file.text().then(importRoomCSV);
+};
+window.handleRequirementsCSV = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  file.text().then(importRequirementsCSV);
 };
 
 // ─── 유틸 ────────────────────────────────────────────────────────────────────
