@@ -62,8 +62,10 @@ function renderTeacherList() {
       <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
       <td><input type="number" value="${t.quota ?? 0}" onchange="updateTeacher(${i},'quota',+this.value)" style="width:50px"></td>
       <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
-      <td><input value="${t.forbiddenRooms ?? ''}" placeholder="101,102" onchange="updateTeacher(${i},'forbiddenRooms',this.value)" style="width:110px"></td>
-      <td><input value="${t.unavailableSlots ?? ''}" placeholder="1_1,2_3" title="못 들어가는 시간: 일차_교시 형식 (예: 1_1,2_3)" onchange="updateTeacher(${i},'unavailableSlots',this.value)" style="width:110px"></td>
+      <td><input value="${t.forbiddenRooms ?? ''}" placeholder="101,102" onchange="updateTeacher(${i},'forbiddenRooms',this.value)" style="width:90px"></td>
+      <td><input value="${t.unavailableSlots ?? ''}" placeholder="1_1,2_3" title="못 들어가는 시간: 일차_교시 (예: 1_1,2_3)" onchange="updateTeacher(${i},'unavailableSlots',this.value)" style="width:90px"></td>
+      <td><input value="${t.requiredSlotStr ?? ''}" placeholder="1_2,2_1" title="반드시 들어가야 하는 시간: 일차_교시 (예: 1_2,2_1)" onchange="updateTeacher(${i},'requiredSlotStr',this.value)" style="width:90px"></td>
+      <td><input value="${t.requiredRoleStr ?? ''}" placeholder="1,2" title="반드시 들어가야 하는 시간의 감독유형: 1=정감독, 2=부감독 (쉼표 구분, 위 시간과 개수 일치)" onchange="updateTeacher(${i},'requiredRoleStr',this.value)" style="width:70px"></td>
       <td><button onclick="removeTeacher(${i})">삭제</button></td>
     </tr>
   `).join('');
@@ -73,13 +75,29 @@ function renderTeacherList() {
 // 규칙: 일차_교시, 예) 1_1 = 첫째날 1교시
 function parseUnavailableSlots(str, slots) {
   if (!str || !str.trim()) return [];
-  return str.split(',').map(s => s.trim()).filter(Boolean).flatMap(token => {
+  return str.split(';').map(s => s.trim()).filter(Boolean).flatMap(token => {
     const [dayPart, periodPart] = token.split('_');
     const dayIdx = parseInt(dayPart);
     const period = parseInt(periodPart);
     if (isNaN(dayIdx) || isNaN(period)) return [];
     const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
     return j > 0 ? [j] : [];
+  });
+}
+
+// "1_2;2_1" + "1;2" → [{slotIdx, roleIdx}] 배열
+function parseRequiredSlots(slotStr, roleStr, slots) {
+  if (!slotStr || !slotStr.trim()) return [];
+  const slotTokens = slotStr.split(';').map(s => s.trim()).filter(Boolean);
+  const roleTokens = roleStr.split(';').map(s => s.trim()).filter(Boolean);
+  return slotTokens.flatMap((token, idx) => {
+    const [dayPart, periodPart] = token.split('_');
+    const dayIdx = parseInt(dayPart);
+    const period = parseInt(periodPart);
+    const roleIdx = parseInt(roleTokens[idx] ?? '1');
+    if (isNaN(dayIdx) || isNaN(period)) return [];
+    const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
+    return j > 0 ? [{ slotIdx: j, roleIdx }] : [];
   });
 }
 
@@ -359,8 +377,8 @@ async function runAssign() {
     const result = assignAll({
       teachers: state.teachers.map(t => ({
         ...t,
-        // "1-1,2-3" → 슬롯 인덱스 배열로 변환
         unavailableSlots: parseUnavailableSlots(t.unavailableSlots || '', slots),
+        requiredSlots: parseRequiredSlots(t.requiredSlotStr || '', t.requiredRoleStr || '', slots),
       })),
       examDays: state.examDays,
       roles: state.roles,
@@ -454,18 +472,58 @@ async function saveAll() {
 // ─── CSV 가져오기 ─────────────────────────────────────────────────────────────
 
 function importTeacherCSV(text) {
-  const lines = text.trim().split('\n').slice(1); // 헤더 제거
-  state.teachers = lines.map(line => {
+  const lines = text.trim().split('\n');
+  const dataLines = lines.slice(1).filter(l => l.trim());
+  const errors = [];
+
+  const teachers = dataLines.map((line, rowIdx) => {
+    // CSV 파싱: 쉼표가 필드 내부에 없다고 가정 (고사실명/시간 구분은 다른 문자 사용)
     const parts = line.split(',').map(s => s.trim());
-    const [name, prevWorkload, forbiddenRooms, unavailableSlots] = parts;
+    const [name, prevWorkload, forbiddenRooms, unavailableSlots, requiredSlotStr, requiredRoleStr] = parts;
+
+    // 반드시 들어가야 하는 시간 & 감독유형 개수 검증
+    if (requiredSlotStr || requiredRoleStr) {
+      const slots = requiredSlotStr ? requiredSlotStr.split(';').map(s => s.trim()).filter(Boolean) : [];
+      const roles = requiredRoleStr ? requiredRoleStr.split(';').map(s => s.trim()).filter(Boolean) : [];
+      if (slots.length !== roles.length) {
+        errors.push(
+          `${rowIdx + 2}행 (${name || '?'}): ` +
+          `반드시들어가야하는시간 ${slots.length}개 ≠ 감독유형 ${roles.length}개 — 개수가 일치해야 합니다.`
+        );
+      }
+      // 형식 검증
+      slots.forEach((s, si) => {
+        if (!/^\d+_\d+$/.test(s)) {
+          errors.push(`${rowIdx + 2}행 (${name || '?'}): 반드시들어가야하는시간 "${s}"의 형식이 올바르지 않습니다. (올바른 형식: 일차_교시, 예: 1_2)`);
+        }
+      });
+      roles.forEach((r, ri) => {
+        if (r !== '1' && r !== '2') {
+          errors.push(`${rowIdx + 2}행 (${name || '?'}): 감독유형 "${r}"은 1(정감독) 또는 2(부감독)만 입력 가능합니다.`);
+        }
+      });
+    }
+
     return {
       name: name || '',
       quota: 0,
       prevWorkload: parseFloat(prevWorkload) || 0,
       forbiddenRooms: forbiddenRooms || '',
       unavailableSlots: unavailableSlots || '',
+      requiredSlotStr: requiredSlotStr || '',
+      requiredRoleStr: requiredRoleStr || '',
     };
   });
+
+  if (errors.length > 0) {
+    alert(
+      '⚠️ CSV 파일에 오류가 있습니다. 수정 후 다시 업로드해주세요.\n\n' +
+      errors.join('\n')
+    );
+    return;
+  }
+
+  state.teachers = teachers;
   renderTeacherList();
   toast(`교사 ${state.teachers.length}명 가져오기 완료`);
 }
@@ -479,13 +537,14 @@ function importRoomCSV(text) {
 
 // CSV 양식 다운로드
 function downloadTeacherCSVTemplate() {
-  const header = '이름,이전누적업무강도,배정불가고사실(쉼표구분),못들어가는시간(일차_교시형식_쉼표구분)';
-  const example = '홍길동,0,,';
-  downloadCSV(header + '\n' + example, '교사목록_양식.csv');
+  const header = '이름,이전누적업무강도,배정불가고사실(세미콜론구분),못들어가는시간(일차_교시_세미콜론구분),반드시들어가야하는시간(일차_교시_세미콜론구분),감독유형(1정감독2부감독_세미콜론구분)';
+  const example = '홍길동,0,,,, ';
+  const note = '# 예시: 홍길동,150,101;201,1_3,2_1;3_2,1;2';
+  downloadCSV(header + '\n' + example + '\n' + note, '교사목록_양식.csv');
 }
 
 function downloadRoomCSVTemplate() {
-  const content = '고사실명\n101\n102';
+  const content = '고사실명\n101\n102\n1학년전반복도';
   downloadCSV(content, '고사실목록_양식.csv');
 }
 

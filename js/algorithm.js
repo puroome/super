@@ -544,6 +544,13 @@ function assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, tCoun
 
 // ─── ⑤ 고사실배정 ────────────────────────────────────────────────────────────
 
+// 고사실명에 "복도"가 포함되면 부감독(2) 역할로 간주
+// ponytail: 이 매핑은 보직 인덱스 2가 부감독이라는 관례에 의존
+function getRoleByRoomName(roomName, assignedRole) {
+  if (roomName && roomName.includes('복도')) return 2;
+  return assignedRole;
+}
+
 function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomRequirements, tCount, sCount) {
   for (let j = 1; j <= sCount; j++) {
     const { dayIdx, period } = slots[j - 1];
@@ -557,7 +564,9 @@ function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomR
       for (let i = 1; i <= tCount; i++) {
         if (extractRole(String(data[i][j])) === r) {
           const room = shuffled[idx % shuffled.length] ?? '';
-          data[i][j] = `${room}[${r}]`;
+          // 복도 고사실이면 보직을 2(부감독)로 재매핑
+          const actualRole = getRoleByRoomName(room, r);
+          data[i][j] = `${room}[${actualRole}]`;
           idx++;
         }
       }
@@ -798,6 +807,18 @@ function assignAll(input) {
     const xSlots = teachers[i - 1].unavailableSlots || [];
     for (const j of xSlots) {
       if (j >= 1 && j <= sCount) data[i][j] = 'x';
+    }
+  }
+
+  // 반드시 들어가야 하는 시간 → 고정셀로 처리 (보직도 미리 기입)
+  // teacher.requiredSlots: [{slotIdx, roleIdx}]
+  for (let i = 1; i <= tCount; i++) {
+    const required = teachers[i - 1].requiredSlots || [];
+    for (const { slotIdx: j, roleIdx: r } of required) {
+      if (j >= 1 && j <= sCount) {
+        fixedMap[i][j] = true;
+        data[i][j] = r > 0 ? `[${r}]` : 1; // 보직 미리 기입
+      }
     }
   }
 
