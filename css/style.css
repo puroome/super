@@ -119,13 +119,12 @@ input[type="text"], input[type="number"], input[type="date"] {
 }
 input:focus { outline: 2px solid var(--accent); }
 
-/* ── 기본정보 레이아웃 ── */
+/* ── 기본정보 레이아웃 — 1열 세로 배열 ── */
 .basic-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 14px;
 }
-@media (max-width: 700px) { .basic-grid { grid-template-columns: 1fr; } }
 
 .tag {
   display: inline-flex;

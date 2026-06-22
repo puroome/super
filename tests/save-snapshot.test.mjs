@@ -2,7 +2,6 @@
 import assert from 'node:assert';
 import { buildSaveSnapshot, applySnapshotToState, emptyState } from '../js/algorithm.js';
 
-// 배정 결과가 있는 state → 스냅샷 → 다시 state로 되돌리면 원본과 같아야 함 (왕복 보존)
 {
   const state = {
     teachers: [{ name: '홍길동', quota: 3 }],
@@ -27,7 +26,6 @@ import { buildSaveSnapshot, applySnapshotToState, emptyState } from '../js/algor
   assert.deepStrictEqual(restored.fixedCells, state.fixedCells);
 }
 
-// 배정 전(자동배정 안 한) state → assignment는 null로 저장되고, 불러오면 안전한 빈 값으로 복원
 {
   const state = {
     teachers: [], rooms: [], roles: [], examDays: [],
@@ -42,7 +40,6 @@ import { buildSaveSnapshot, applySnapshotToState, emptyState } from '../js/algor
   assert.deepStrictEqual(restored.fixedCells, {});
 }
 
-// emptyState는 항상 빈 배열/객체를 가진 완전한 모양이어야 함 (초기화 버튼이 의존)
 {
   const e = emptyState();
   assert.deepStrictEqual(e.teachers, []);

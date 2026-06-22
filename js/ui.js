@@ -20,18 +20,18 @@ import {
 // ─── 전역 상태 ────────────────────────────────────────────────────────────────
 
 const state = {
-  teachers: [],   // [{name, quota, prevWorkload, forbiddenRooms, unavailableSlots:[]}]
-  rooms: [],      // [string]
-  roles: [],      // [{name, workload}]
-  examDays: [],   // [{date, startPeriod, endPeriod}]
-  requirements: [],     // [{dayIdx, period, roleIdx, count}]
-  roomRequirements: [], // [{dayIdx, period, roleIdx, roomName, count}]
-  data: null,     // 2D 배정 그리드
-  fixedCells: {}, // {i: {j: true}}
+  teachers: [],
+  rooms: [],
+  roles: [],
+  examDays: [],
+  requirements: [],
+  roomRequirements: [],
+  data: null,
+  fixedCells: {},
   workload: [],
   roleCounts: [],
   slots: [],
-  selectedCells: [], // 수동 swap용 [{i,j}]
+  selectedCells: [],
 };
 
 // ─── 탭 전환 ─────────────────────────────────────────────────────────────────
@@ -74,8 +74,6 @@ function renderTeacherList() {
   `).join('');
 }
 
-// "1_1,2_3" 형식 → 슬롯 인덱스 배열 (1-based)
-// 규칙: 일차_교시, 예) 1_1 = 첫째날 1교시
 function parseUnavailableSlots(str, slots) {
   if (!str || !str.trim()) return [];
   return str.split(';').map(s => s.trim()).filter(Boolean).flatMap(token => {
@@ -88,7 +86,6 @@ function parseUnavailableSlots(str, slots) {
   });
 }
 
-// "1_2;2_1" + "1;2" → [{slotIdx, roleIdx}] 배열
 function parseRequiredSlots(slotStr, roleStr, slots) {
   if (!slotStr || !slotStr.trim()) return [];
   const slotTokens = slotStr.split(';').map(s => s.trim()).filter(Boolean);
@@ -104,16 +101,10 @@ function parseRequiredSlots(slotStr, roleStr, slots) {
   });
 }
 
-// 배정할 시간 자동채우기
-// ponytail: 원본 엑셀(c감독배정생성.bas의 "배정할시간자동채우기")과 동일한 라운드로빈.
-//   교사 목록 위(어린 교사)부터 1시간씩 순서대로 채우고, "못들어가는시간" 개수만큼 개인 한도를 둔다.
-//   균등분배가 안 될 때는 위쪽(어린) 교사가 자투리 1시간을 더 받는다.
-// @returns {number} 실제로 배분된 시간 (totalNeed에 못 미치면 한도초과)
 function autoFillQuota() {
   const slots = buildSlots(state.examDays);
   if (!slots.length || !state.teachers.length) { toast('시험 날짜와 교사를 먼저 입력하세요.'); return 0; }
 
-  // 슬롯별 필요인원 합계
   const slotNeeds = {};
   state.requirements.forEach(r => {
     const j = slots.findIndex(s => s.dayIdx === r.dayIdx && s.period === r.period) + 1;
@@ -224,7 +215,6 @@ function updateRoomReq(dayIdx, period, roleIdx, roomName, count) {
     state.roomRequirements.push({ dayIdx, period, roleIdx, roomName, count });
   }
 
-  // requirements 동기화 (보직별 합계)
   syncRequirements();
 }
 
@@ -241,7 +231,6 @@ function syncRequirements() {
   }
 }
 
-// 현재 배정설정 값을 CSV로 내려받기 (엑셀에서 수정 후 재업로드용 양식)
 function downloadRequirementsCSVTemplate() {
   if (!state.examDays.length || !state.roles.length || !state.rooms.length) {
     toast('기본정보(날짜/보직/고사실)를 먼저 입력하세요.'); return;
@@ -288,7 +277,6 @@ function renderAssignGrid() {
   const tCount = state.teachers.length;
   const sCount = slots.length;
 
-  // 헤더: 날짜/교시
   let html = `<div class="grid-scroll"><table class="assign-grid">
   <thead>
     <tr>
@@ -304,7 +292,6 @@ function renderAssignGrid() {
 
   for (let i = 1; i <= tCount; i++) {
     const t = state.teachers[i - 1];
-    const isSelected = state.selectedCells.some(c => c.i === i);
     html += `<tr>
       <td>${i}</td>
       <td>${t.name}</td>
@@ -333,11 +320,9 @@ function renderAssignGrid() {
     </tr>`;
   }
 
-  // 하단 통계
   html += `</tbody></table></div>`;
   document.getElementById('assign-grid-wrap').innerHTML = html;
 
-  // swap 버튼 상태
   document.getElementById('btn-swap').disabled = state.selectedCells.length !== 2;
 }
 
@@ -366,7 +351,6 @@ function doSwap() {
   if (state.selectedCells.length !== 2) return;
   const [c1, c2] = state.selectedCells;
   if (swapCells(state.data, state.fixedCells, c1.i, c1.j, c2.i, c2.j)) {
-    // 업무강도 재계산
     const rc = calcRoleCounts(state.data, state.slots, state.teachers, state.roles,
       state.teachers.length, state.slots.length);
     state.roleCounts = rc;
@@ -393,7 +377,6 @@ function renderSupervisorTable() {
     rooms: state.rooms, roles: state.roles, examDays: state.examDays,
   };
 
-  // ponytail: buildFullTableHTML을 재사용, 인라인으로도 표시
   import('./print.js').then(({ buildFullTableHTML }) => {
     document.getElementById('table-wrap').innerHTML = buildFullTableHTML(params);
   });
@@ -414,11 +397,8 @@ async function runAssign() {
   btn.textContent = '배정 중...';
 
   try {
-    // ponytail: 원본 엑셀처럼 "배정할시간"을 따로 입력하지 않아도 되도록,
-    //   아무도 손대지 않은 상태(전부 0)면 자동배정 직전에 자동 채우기를 먼저 실행한다.
     if (state.teachers.every(t => !t.quota)) autoFillQuota();
 
-    // 사전 검증
     const slots = buildSlots(state.examDays);
     const slotNeeds = {};
     state.requirements.forEach(r => {
@@ -526,9 +506,8 @@ async function saveAll() {
   }
 }
 
-// ─── 초기화 / 이름 지정 저장 / 불러오기 ───────────────────────────────────────────
+// ─── 초기화 / 이름 지정 저장 / 불러오기 ──────────────────────────────────────
 
-// 모든 화면을 새 state 기준으로 다시 그림 (초기화·불러오기에서 공용으로 사용)
 function rerenderAll() {
   renderBasicTab();
   renderRequirementsTab();
@@ -543,7 +522,6 @@ async function resetAll() {
   state.selectedCells = [];
   rerenderAll();
   try {
-    // ponytail: 현재 작업본도 같이 비워야 새로고침했을 때 예전 자료가 다시 안 뜬다.
     await clearCurrentDocs();
   } catch (e) {
     console.error(e);
@@ -563,7 +541,7 @@ async function saveAsNamed() {
   }
 }
 
-let saveListCache = []; // 불러오기 모달에서 삭제 시 이름 조회용
+let saveListCache = [];
 
 function formatSaveDate(ts) {
   try {
@@ -650,11 +628,9 @@ function importTeacherCSV(text) {
   const errors = [];
 
   const teachers = dataLines.map((line, rowIdx) => {
-    // CSV 파싱: 쉼표가 필드 내부에 없다고 가정 (고사실명/시간 구분은 다른 문자 사용)
     const parts = line.split(',').map(s => s.trim());
     const [name, prevWorkload, forbiddenRooms, unavailableSlots, requiredSlotStr, requiredRoleStr] = parts;
 
-    // 반드시 들어가야 하는 시간 & 감독유형 개수 검증
     if (requiredSlotStr || requiredRoleStr) {
       const slots = requiredSlotStr ? requiredSlotStr.split(';').map(s => s.trim()).filter(Boolean) : [];
       const roles = requiredRoleStr ? requiredRoleStr.split(';').map(s => s.trim()).filter(Boolean) : [];
@@ -664,7 +640,6 @@ function importTeacherCSV(text) {
           `반드시들어가야하는시간 ${slots.length}개 ≠ 감독유형 ${roles.length}개 — 개수가 일치해야 합니다.`
         );
       }
-      // 형식 검증
       slots.forEach((s, si) => {
         if (!/^\d+_\d+$/.test(s)) {
           errors.push(`${rowIdx + 2}행 (${name || '?'}): 반드시들어가야하는시간 "${s}"의 형식이 올바르지 않습니다. (올바른 형식: 일차_교시, 예: 1_2)`);
@@ -708,10 +683,9 @@ function importRoomCSV(text) {
   toast(`고사실 ${state.rooms.length}개 가져오기 완료`);
 }
 
-// CSV 양식 다운로드
 function downloadTeacherCSVTemplate() {
   const header = '이름,이전누적업무강도,배정불가고사실(세미콜론구분),못들어가는시간(일차_교시_세미콜론구분),반드시들어가야하는시간(일차_교시_세미콜론구분),감독유형(1정감독2부감독_세미콜론구분)';
-  const example = '홍길동,0,,,, ';
+  const example = '홍길동,0,,,,';
   const note = '# 예시: 홍길동,150,101;201,1_3,2_1;3_2,1;2';
   downloadCSV(header + '\n' + example + '\n' + note, '교사목록_양식.csv');
 }
@@ -732,7 +706,7 @@ function downloadCSV(content, filename) {
   URL.revokeObjectURL(a.href);
 }
 
-// ─── 뮤테이션 핸들러 (index.html에서 전역으로 호출) ──────────────────────────
+// ─── 뮤테이션 핸들러 ─────────────────────────────────────────────────────────
 
 window.updateTeacher = (idx, key, val) => { state.teachers[idx][key] = val; };
 window.updateRole = (idx, key, val) => { state.roles[idx][key] = val; };
