@@ -62,10 +62,48 @@ function renderTeacherList() {
       <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
       <td><input type="number" value="${t.quota ?? 0}" onchange="updateTeacher(${i},'quota',+this.value)" style="width:50px"></td>
       <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
-      <td><input value="${t.forbiddenRooms ?? ''}" placeholder="1-1,1-2" onchange="updateTeacher(${i},'forbiddenRooms',this.value)" style="width:120px"></td>
+      <td><input value="${t.forbiddenRooms ?? ''}" placeholder="1-1,1-2" onchange="updateTeacher(${i},'forbiddenRooms',this.value)" style="width:110px"></td>
+      <td><input value="${t.unavailableSlots ?? ''}" placeholder="1-1,2-3" title="못 들어가는 시간: 일차-교시 형식 (예: 1-1,2-3)" onchange="updateTeacher(${i},'unavailableSlots',this.value)" style="width:110px"></td>
       <td><button onclick="removeTeacher(${i})">삭제</button></td>
     </tr>
   `).join('');
+}
+
+// "1-1,2-3" 형식 → 슬롯 인덱스 배열 (1-based)
+// 규칙: 일차-교시, 예) 1-1 = 첫째날 1교시
+function parseUnavailableSlots(str, slots) {
+  if (!str || !str.trim()) return [];
+  return str.split(',').map(s => s.trim()).filter(Boolean).flatMap(token => {
+    const [dayPart, periodPart] = token.split('-');
+    const dayIdx = parseInt(dayPart);
+    const period = parseInt(periodPart);
+    if (isNaN(dayIdx) || isNaN(period)) return [];
+    const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
+    return j > 0 ? [j] : [];
+  });
+}
+
+// 배정할 시간 자동채우기: 총 필요시간을 교사수로 균등 분배
+function autoFillQuota() {
+  const slots = buildSlots(state.examDays);
+  if (!slots.length || !state.teachers.length) { toast('시험 날짜와 교사를 먼저 입력하세요.'); return; }
+
+  // 슬롯별 필요인원 합계
+  const slotNeeds = {};
+  state.requirements.forEach(r => {
+    const j = slots.findIndex(s => s.dayIdx === r.dayIdx && s.period === r.period) + 1;
+    if (j > 0) slotNeeds[j] = (slotNeeds[j] ?? 0) + r.count;
+  });
+  const totalNeed = Object.values(slotNeeds).reduce((s, v) => s + v, 0);
+
+  if (totalNeed === 0) { toast('배정설정 탭에서 필요인원을 먼저 입력하세요.'); return; }
+
+  const n = state.teachers.length;
+  const base = Math.floor(totalNeed / n);
+  const remainder = totalNeed % n;
+  state.teachers.forEach((t, i) => { t.quota = base + (i < remainder ? 1 : 0); });
+  renderTeacherList();
+  toast(`총 ${totalNeed}시간 → 교사 ${n}명에게 자동 배분 완료`);
 }
 
 function renderRoomList() {
@@ -319,7 +357,11 @@ async function runAssign() {
     if (!ok) { alert(errors.join('\n')); return; }
 
     const result = assignAll({
-      teachers: state.teachers,
+      teachers: state.teachers.map(t => ({
+        ...t,
+        // "1-1,2-3" → 슬롯 인덱스 배열로 변환
+        unavailableSlots: parseUnavailableSlots(t.unavailableSlots || '', slots),
+      })),
       examDays: state.examDays,
       roles: state.roles,
       requirements: state.requirements,
@@ -414,8 +456,15 @@ async function saveAll() {
 function importTeacherCSV(text) {
   const lines = text.trim().split('\n').slice(1); // 헤더 제거
   state.teachers = lines.map(line => {
-    const [name, prevWorkload] = line.split(',').map(s => s.trim());
-    return { name, quota: 0, prevWorkload: parseFloat(prevWorkload) || 0, forbiddenRooms: '', unavailableSlots: [] };
+    const parts = line.split(',').map(s => s.trim());
+    const [name, prevWorkload, forbiddenRooms, unavailableSlots] = parts;
+    return {
+      name: name || '',
+      quota: 0,
+      prevWorkload: parseFloat(prevWorkload) || 0,
+      forbiddenRooms: forbiddenRooms || '',
+      unavailableSlots: unavailableSlots || '',
+    };
   });
   renderTeacherList();
   toast(`교사 ${state.teachers.length}명 가져오기 완료`);
@@ -426,6 +475,29 @@ function importRoomCSV(text) {
   state.rooms = lines.map(l => l.trim()).filter(Boolean);
   renderRoomList();
   toast(`고사실 ${state.rooms.length}개 가져오기 완료`);
+}
+
+// CSV 양식 다운로드
+function downloadTeacherCSVTemplate() {
+  const header = '이름,이전누적업무강도,배정불가고사실(쉼표구분),못들어가는시간(일차-교시형식_쉼표구분)';
+  const example = '홍길동,0,,';
+  downloadCSV(header + '\n' + example, '교사목록_양식.csv');
+}
+
+function downloadRoomCSVTemplate() {
+  const content = '고사실명\n1-1\n1-2';
+  downloadCSV(content, '고사실목록_양식.csv');
+}
+
+function downloadCSV(content, filename) {
+  // ponytail: BOM 추가로 Excel 한글 깨짐 방지
+  const bom = '\uFEFF';
+  const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // ─── 뮤테이션 핸들러 (index.html에서 전역으로 호출) ──────────────────────────
@@ -463,6 +535,9 @@ window.addExamDay = () => {
 window.saveAll = saveAll;
 window.runAssign = runAssign;
 window.doSwap = doSwap;
+window.autoFillQuota = autoFillQuota;
+window.downloadTeacherCSVTemplate = downloadTeacherCSVTemplate;
+window.downloadRoomCSVTemplate = downloadRoomCSVTemplate;
 
 window.showRequirementsTab = renderRequirementsTab;
 
