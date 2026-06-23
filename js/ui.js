@@ -912,6 +912,41 @@ window.loadNamedAndApply = loadNamedAndApply;
 window.deleteNamedConfirm = deleteNamedConfirm;
 window.runAssign = runAssign;
 window.doSwap = doSwap;
+window.openPrevWorkloadPicker = async (thEl) => {
+  document.getElementById('prev-workload-picker')?.remove();
+  const saves = await listSaves();
+  if (!saves.length) { toast('저장된 자료가 없습니다'); return; }
+  const picker = document.createElement('div');
+  picker.id = 'prev-workload-picker';
+  picker.style.cssText = 'position:absolute;background:#fff;border:1px solid #d0d7e3;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:999;min-width:180px;padding:4px 0';
+  saves.forEach(s => {
+    const item = document.createElement('div');
+    item.textContent = s.name;
+    item.style.cssText = 'padding:8px 14px;cursor:pointer;font-size:13px';
+    item.onmouseenter = () => item.style.background = '#f0f4fa';
+    item.onmouseleave = () => item.style.background = '';
+    item.onclick = async () => {
+      picker.remove();
+      const snapshot = await loadNamed(s.id);
+      if (!snapshot) { toast('불러오기 실패'); return; }
+      const prevTeachers = snapshot.teachers ?? [];
+      const workload = snapshot.assignment?.workload;
+      state.teachers.forEach(t => {
+        const prevIdx = prevTeachers.findIndex(p => p.name === t.name);
+        // ponytail: workload는 1-based 배열, prevIdx는 0-based라 +1
+        t.prevWorkload = (workload && prevIdx >= 0) ? (workload[prevIdx + 1] ?? 0) : 0;
+      });
+      renderTeacherList();
+      toast('이전누적강도 적용 완료');
+    };
+    picker.appendChild(item);
+  });
+  const rect = thEl.getBoundingClientRect();
+  picker.style.top = (rect.bottom + window.scrollY) + 'px';
+  picker.style.left = rect.left + 'px';
+  document.body.appendChild(picker);
+  setTimeout(() => document.addEventListener('click', () => picker.remove(), { once: true }), 0);
+};
 window.autoFillQuota = autoFillQuota;
 window.downloadTeacherCSVTemplate = downloadTeacherCSVTemplate;
 window.downloadRoomCSVTemplate = downloadRoomCSVTemplate;
