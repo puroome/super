@@ -343,6 +343,15 @@ function renderAssignGrid() {
 }
 
 function onCellClick(i, j) {
+  const cell = String(state.data[i]?.[j] ?? '');
+  // ponytail: fixedCells(수동고정) + requiredSlotIdxs(기본정보고정) 둘 다 막아야 함
+  const isManualFixed = !!state.fixedCells[i]?.[j];
+  const t = state.teachers[i - 1];
+  const isRequiredFixed = t ? parseRequiredSlots(t.requiredSlotStr || '', t.requiredRoleStr || '', state.slots).some(r => r.slotIdx === j) : false;
+  const isEmpty = cell === '' || cell === '0' || cell === 0;
+  const isExcluded = cell.toLowerCase() === 'x';
+  if (isManualFixed || isRequiredFixed || isEmpty || isExcluded) return;
+
   const idx = state.selectedCells.findIndex(c => c.i === i && c.j === j);
   if (idx >= 0) state.selectedCells.splice(idx, 1);
   else {
