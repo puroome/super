@@ -856,13 +856,13 @@ window.removeExamDay = (idx) => {
 };
 
 window.addTeacher = () => {
-  state.teachers.push({ name: '새교사', quota: 0, prevWorkload: 0, forbiddenRooms: '', unavailableSlots: '', requiredSlotStr: '', requiredRoleStr: '' });
+  state.teachers.push({ name: '', quota: 0, prevWorkload: 0, forbiddenRooms: '', unavailableSlots: '', requiredSlotStr: '', requiredRoleStr: '' });
   renderTeacherList();
 };
-window.addRoom = () => { state.rooms.push('새고사실'); renderRoomList(); };
+window.addRoom = () => { state.rooms.push(''); renderRoomList(); };
 window.updateRoom = (idx, val) => { state.rooms[idx] = val.trim(); };
 window.addRole = () => {
-  state.roles.push({ name: '새보직', workload: 0 });
+  state.roles.push({ name: '', workload: 0 });
   renderRoleList();
 };
 window.addExamDay = () => {
