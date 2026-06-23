@@ -139,7 +139,7 @@ function autoFillQuota() {
 function renderRoomList() {
   const el = document.getElementById('room-list');
   el.innerHTML = state.rooms.map((r, i) => `
-    <tr><td><input value="${r}" onchange="updateRoom(${i},this.value)" style="width:100%"></td><td><button onclick="removeRoom(${i})">삭제</button></td></tr>
+    <span class="tag">${r} <button onclick="removeRoom(${i})">×</button></span>
   `).join('');
 }
 
@@ -859,8 +859,10 @@ window.addTeacher = () => {
   state.teachers.push({ name: '', quota: 0, prevWorkload: 0, forbiddenRooms: '', unavailableSlots: '', requiredSlotStr: '', requiredRoleStr: '' });
   renderTeacherList();
 };
-window.addRoom = () => { state.rooms.push(''); renderRoomList(); };
-window.updateRoom = (idx, val) => { state.rooms[idx] = val.trim(); };
+window.addRoom = () => {
+  const name = prompt('고사실명을 입력하세요 (예: 101)')?.trim();
+  if (name) { state.rooms.push(name); renderRoomList(); }
+};
 window.addRole = () => {
   state.roles.push({ name: '', workload: 0 });
   renderRoleList();
