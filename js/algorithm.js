@@ -17,6 +17,26 @@ function isInArray(arr, val) {
   return Array.isArray(arr) && arr.includes(val);
 }
 
+// ponytail: RFC4180 — 쉼표/따옴표가 있는 값만 따옴표로 감싸기 (parseCSVLine과 짝)
+function csvField(v) {
+  v = String(v ?? '');
+  return /[,"]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+
+// 자동배정 결과 그리드의 셀 1칸을 어떻게 표시할지 결정.
+// 우선순위: 고정시간으로 배정된 영역(파랑) > 제외시간 x(빨강) > 기본(흰색)
+// 보직별 색 구분은 안 함(인쇄 출력에서 확인) — [역할번호] 표기도 화면에는 안 보여줌(불필요한 정보).
+function gridCellDisplay(cell, isFixed) {
+  cell = String(cell ?? '');
+  const bg = isFixed ? '#cfe3fa' : cell === 'x' ? '#fbdada' : '#fff';
+  if (cell === '0' || cell === '') return { bg, text: '' };
+  if (cell === 'x') return { bg, text: 'X' };
+  const roleIdx = extractRole(cell);
+  const room = extractRoom(cell);
+  const text = roleIdx > 0 ? (room || cell) : cell;
+  return { bg, text };
+}
+
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -904,4 +924,6 @@ export {
   buildSaveSnapshot,
   applySnapshotToState,
   emptyState,
+  csvField,
+  gridCellDisplay,
 };

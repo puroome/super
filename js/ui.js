@@ -5,6 +5,7 @@ import {
   buildSlots, extractRole, extractRoom, calcRoleCounts,
   parseRequirementsCSV, distributeQuota,
   buildSaveSnapshot, applySnapshotToState, emptyState,
+  csvField, gridCellDisplay,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
@@ -335,24 +336,19 @@ function renderAssignGrid() {
     html += `<tr>
       <td>${i}</td>
       <td>${t.name}</td>
-      <td><input type="number" value="${t.quota ?? 0}" onchange="updateTeacherQuota(${i},+this.value)" style="width:45px" min="0"></td>
-      <td><input value="${t.forbiddenRooms ?? ''}" onchange="updateTeacherField(${i - 1},'forbiddenRooms',this)" style="width:80px" placeholder="101, 102"></td>
+      <td>${t.quota ?? 0}</td>
+      <td>${t.forbiddenRooms || '-'}</td>
       ${slots.map((s, idx) => {
         const j = idx + 1;
         const cell = String(data[i]?.[j] ?? '');
         const isFixed = fixedCells[i]?.[j];
-        const roleIdx = extractRole(cell);
-        const room = extractRoom(cell);
-        const bg = isFixed ? '#e7e7e7' : (ROLE_COLORS[roleIdx] ?? '#fff');
-        const cellVal = cell === '0' || cell === '' ? '' :
-          cell === 'x' ? 'X' :
-          roleIdx > 0 ? `${room}[${roleIdx}]` : cell;
+        const { bg, text } = gridCellDisplay(cell, isFixed);
         const selClass = state.selectedCells.some(c => c.i === i && c.j === j) ? ' selected-cell' : '';
         return `<td class="grid-cell${selClass}" style="background:${bg}"
           onclick="onCellClick(${i},${j})"
           ondblclick="onCellDblClick(${i},${j})"
           title="${isFixed ? '고정됨 (더블클릭으로 해제)' : '클릭: 선택 / 더블클릭: 고정'}"
-        >${cellVal}</td>`;
+        >${text}</td>`;
       }).join('')}
       <td>${state.roleCounts[i - 1]?.counts.reduce((s, v) => s + v, 0) ?? 0}</td>
       <td>${Math.round(state.workload[i] ?? 0)}</td>
@@ -398,10 +394,6 @@ function doSwap() {
     renderAssignGrid();
     toast('교환 완료');
   }
-}
-
-function updateTeacherQuota(teacherIdx1based, val) {
-  state.teachers[teacherIdx1based - 1].quota = val;
 }
 
 // 표 입력 → 표준형으로 정규화 후 저장 + 화면에 즉시 반영(블러 시 칸이 표준형으로 정리됨)
@@ -799,11 +791,15 @@ function importRoomCSV(text) {
 
 function downloadTeacherCSVTemplate() {
   const header = '이름,이전누적업무강도,제외고사실,제외시간,고정시간,감독유형';
-  downloadCSV(header, '교사목록_양식.csv');
+  const rows = state.teachers.map(t => [
+    t.name, t.prevWorkload ?? 0, t.forbiddenRooms ?? '', t.unavailableSlots ?? '', t.requiredSlotStr ?? '', t.requiredRoleStr ?? '',
+  ].map(csvField).join(','));
+  downloadCSV([header, ...rows].join('\n'), '교사목록_양식.csv');
 }
 
 function downloadRoomCSVTemplate() {
-  downloadCSV('고사실명', '고사실목록_양식.csv');
+  const rows = ['고사실명', ...state.rooms.map(csvField)];
+  downloadCSV(rows.join('\n'), '고사실목록_양식.csv');
 }
 
 function downloadCSV(content, filename) {
@@ -823,7 +819,6 @@ window.updateTeacher = (idx, key, val) => { state.teachers[idx][key] = val; };
 window.updateTeacherField = updateTeacherField;
 window.updateRole = (idx, key, val) => { state.roles[idx][key] = val; };
 window.updateExamDay = (idx, key, val) => { state.examDays[idx][key] = val; };
-window.updateTeacherQuota = updateTeacherQuota;
 window.updateRoomReq = updateRoomReq;
 window.onCellClick = onCellClick;
 window.onCellDblClick = onCellDblClick;
