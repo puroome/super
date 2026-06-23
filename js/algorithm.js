@@ -668,8 +668,8 @@ function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomR
 
       for (let i = 1; i <= tCount; i++) {
         if (extractRole(String(data[i][j])) === r) {
-          // ponytail: 고정 셀은 고사실 덮어쓰지 않음
-          if (fixedMap[i][j]) { idx++; continue; }
+          // ponytail: 고정 셀이 이미 고사실 정보를 갖고 있으면 건너뜀(idx 증가 없음)
+          if (fixedMap[i][j] && extractRoom(String(data[i][j]))) { continue; }
           if (idx < shuffled.length) {
             const room = shuffled[idx];
             const actualRole = getRoleByRoomName(room, r);
