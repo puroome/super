@@ -49,6 +49,44 @@ function initTabs() {
   });
 }
 
+// ─── 입력 형식 정규화 ─────────────────────────────────────────────────────────
+// ponytail: 예전엔 표 입력은 쉼표(placeholder가 "1_1,2_3"), CSV·파서는 세미콜론을
+//   써서 구분자가 뒤섞였다. 게다가 파서가 세미콜론만 split 해서 표에 "1_1,2_3"을
+//   치면 2_3이 조용히 무시되는 버그가 있었다. 이제 입력 구분자는 쉼표/세미콜론
+//   둘 다 받아주되(관용), 저장·표시는 항상 표준형으로 통일한다.
+//   - 시간: "일차-교시" (예: 1-3, 2-1)
+//   - 항목 구분: ", " (쉼표+공백)
+
+function normalizeSlotStr(str) {
+  if (str == null || !String(str).trim()) return '';
+  return String(str).split(/[,;]/).map(s => s.trim()).filter(Boolean)
+    .map(tok => {
+      const m = tok.match(/^(\d+)[-_](\d+)$/);
+      return m ? `${m[1]}-${m[2]}` : tok; // 형식이 어긋난 토큰은 그대로 둬서 사용자가 보고 고치게 함
+    })
+    .join(', ');
+}
+
+function normalizeRoleStr(str) {
+  if (str == null || !String(str).trim()) return '';
+  return String(str).split(/[,;]/).map(s => s.trim()).filter(Boolean).join(', ');
+}
+
+function normalizeRoomStr(str) {
+  if (str == null || !String(str).trim()) return '';
+  return String(str).split(/[,;]/).map(s => s.trim()).filter(Boolean).join(', ');
+}
+
+function normalizeTeacherStrings(t) {
+  return {
+    ...t,
+    forbiddenRooms: normalizeRoomStr(typeof t.forbiddenRooms === 'string' ? t.forbiddenRooms : ''),
+    unavailableSlots: normalizeSlotStr(typeof t.unavailableSlots === 'string' ? t.unavailableSlots : ''),
+    requiredSlotStr: normalizeSlotStr(typeof t.requiredSlotStr === 'string' ? t.requiredSlotStr : ''),
+    requiredRoleStr: normalizeRoleStr(typeof t.requiredRoleStr === 'string' ? t.requiredRoleStr : ''),
+  };
+}
+
 // ─── 탭1: 기본정보 ───────────────────────────────────────────────────────────
 
 function renderBasicTab() {
@@ -65,10 +103,10 @@ function renderTeacherList() {
       <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
       <td><input type="number" value="${t.quota ?? 0}" onchange="updateTeacher(${i},'quota',+this.value)" style="width:50px"></td>
       <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
-      <td><input value="${t.forbiddenRooms ?? ''}" placeholder="101,102" onchange="updateTeacher(${i},'forbiddenRooms',this.value)" style="width:90px"></td>
-      <td><input value="${t.unavailableSlots ?? ''}" placeholder="1_1,2_3" title="못 들어가는 시간: 일차_교시 (예: 1_1,2_3)" onchange="updateTeacher(${i},'unavailableSlots',this.value)" style="width:90px"></td>
-      <td><input value="${t.requiredSlotStr ?? ''}" placeholder="1_2,2_1" title="반드시 들어가야 하는 시간: 일차_교시 (예: 1_2,2_1)" onchange="updateTeacher(${i},'requiredSlotStr',this.value)" style="width:90px"></td>
-      <td><input value="${t.requiredRoleStr ?? ''}" placeholder="1,2" title="반드시 들어가야 하는 시간의 감독유형: 1=정감독, 2=부감독 (쉼표 구분, 위 시간과 개수 일치)" onchange="updateTeacher(${i},'requiredRoleStr',this.value)" style="width:70px"></td>
+      <td><input value="${t.forbiddenRooms ?? ''}" placeholder="101, 102" onchange="updateTeacherField(${i},'forbiddenRooms',this)" style="width:90px"></td>
+      <td><input value="${t.unavailableSlots ?? ''}" placeholder="1-1, 2-3" title="제외 시간: 일차-교시 (예: 1-1, 2-3)" onchange="updateTeacherField(${i},'unavailableSlots',this)" style="width:90px"></td>
+      <td><input value="${t.requiredSlotStr ?? ''}" placeholder="1-2, 2-1" title="고정 시간: 일차-교시 (예: 1-2, 2-1)" onchange="updateTeacherField(${i},'requiredSlotStr',this)" style="width:90px"></td>
+      <td><input value="${t.requiredRoleStr ?? ''}" placeholder="1, 2" title="고정 시간의 감독유형: 1=정감독, 2=부감독 (쉼표 구분, 위 시간과 개수 일치)" onchange="updateTeacherField(${i},'requiredRoleStr',this)" style="width:70px"></td>
       <td><button onclick="removeTeacher(${i})">삭제</button></td>
     </tr>
   `).join('');
@@ -76,8 +114,9 @@ function renderTeacherList() {
 
 function parseUnavailableSlots(str, slots) {
   if (!str || !str.trim()) return [];
-  return str.split(';').map(s => s.trim()).filter(Boolean).flatMap(token => {
-    const [dayPart, periodPart] = token.split('_');
+  // ponytail: 구분자(,/;)·시간형식(-/_) 모두 관용적으로 받음 (옛 데이터 호환)
+  return str.split(/[,;]/).map(s => s.trim()).filter(Boolean).flatMap(token => {
+    const [dayPart, periodPart] = token.split(/[-_]/);
     const dayIdx = parseInt(dayPart);
     const period = parseInt(periodPart);
     if (isNaN(dayIdx) || isNaN(period)) return [];
@@ -88,16 +127,16 @@ function parseUnavailableSlots(str, slots) {
 
 function parseRequiredSlots(slotStr, roleStr, slots) {
   if (!slotStr || !slotStr.trim()) return [];
-  const slotTokens = slotStr.split(';').map(s => s.trim()).filter(Boolean);
-  const roleTokens = roleStr.split(';').map(s => s.trim()).filter(Boolean);
+  const slotTokens = slotStr.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  const roleTokens = (roleStr || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
   return slotTokens.flatMap((token, idx) => {
-    const [dayPart, periodPart] = token.split('_');
+    const [dayPart, periodPart] = token.split(/[-_]/);
     const dayIdx = parseInt(dayPart);
     const period = parseInt(periodPart);
     const roleIdx = parseInt(roleTokens[idx] ?? '1');
     if (isNaN(dayIdx) || isNaN(period)) return [];
     const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
-    return j > 0 ? [{ slotIdx: j, roleIdx }] : [];
+    return j > 0 ? [{ slotIdx: j, roleIdx: isNaN(roleIdx) ? 1 : roleIdx }] : [];
   });
 }
 
@@ -281,7 +320,7 @@ function renderAssignGrid() {
   let html = `<div class="grid-scroll"><table class="assign-grid">
   <thead>
     <tr>
-      <th>순번</th><th>이름</th><th>배정시간</th><th>배정불가</th>
+      <th>순번</th><th>이름</th><th>배정시간</th><th>제외 고사실</th>
       ${slots.map((s, idx) => {
         const day = state.examDays[s.dayIdx - 1];
         return `<th class="slot-header">${formatDate(day?.date)}<br>${s.period}교시</th>`;
@@ -297,7 +336,7 @@ function renderAssignGrid() {
       <td>${i}</td>
       <td>${t.name}</td>
       <td><input type="number" value="${t.quota ?? 0}" onchange="updateTeacherQuota(${i},+this.value)" style="width:45px" min="0"></td>
-      <td><input value="${t.forbiddenRooms ?? ''}" onchange="updateTeacher(${i - 1},'forbiddenRooms',this.value)" style="width:80px" placeholder="1-1,1-2"></td>
+      <td><input value="${t.forbiddenRooms ?? ''}" onchange="updateTeacherField(${i - 1},'forbiddenRooms',this)" style="width:80px" placeholder="101, 102"></td>
       ${slots.map((s, idx) => {
         const j = idx + 1;
         const cell = String(data[i]?.[j] ?? '');
@@ -363,6 +402,16 @@ function doSwap() {
 
 function updateTeacherQuota(teacherIdx1based, val) {
   state.teachers[teacherIdx1based - 1].quota = val;
+}
+
+// 표 입력 → 표준형으로 정규화 후 저장 + 화면에 즉시 반영(블러 시 칸이 표준형으로 정리됨)
+function updateTeacherField(idx, key, inputEl) {
+  let v = inputEl.value;
+  if (key === 'unavailableSlots' || key === 'requiredSlotStr') v = normalizeSlotStr(v);
+  else if (key === 'requiredRoleStr') v = normalizeRoleStr(v);
+  else if (key === 'forbiddenRooms') v = normalizeRoomStr(v);
+  state.teachers[idx][key] = v;
+  inputEl.value = v;
 }
 
 // ─── 탭4: 감독표 ─────────────────────────────────────────────────────────────
@@ -431,7 +480,7 @@ async function runAssign() {
     if (result.roomShortages.length > 0) {
       toast(`⚠️ 고사실 칸보다 배정인원이 많아 ${result.roomShortages.length}자리 미배정 — 배정설정의 보직별 합계를 확인하세요`, 6000);
     } else if (result.forbiddenViolations.length > 0) {
-      toast(`⚠️ 배정불가 고사실 ${result.forbiddenViolations.length}건 미해결 — 빨간 셀 확인`, 5000);
+      toast(`⚠️ 제외 고사실 ${result.forbiddenViolations.length}건 미해결 — 빨간 셀 확인`, 5000);
     } else {
       toast('✅ 배정 완료');
     }
@@ -463,7 +512,8 @@ async function loadAll() {
       loadBasic(), loadRequirements(), loadAssignment(),
     ]);
 
-    state.teachers = basic.teachers ?? [];
+    // ponytail: 옛 데이터(세미콜론·_표기)도 불러올 때 표준형으로 정규화
+    state.teachers = (basic.teachers ?? []).map(normalizeTeacherStrings);
     state.rooms = basic.rooms ?? [];
     state.roles = basic.roles ?? [];
     state.examDays = basic.examDays ?? [];
@@ -598,6 +648,8 @@ async function loadNamedAndApply(id) {
     const snapshot = await loadNamed(id);
     if (!snapshot) { toast('데이터를 찾을 수 없습니다.'); return; }
     Object.assign(state, applySnapshotToState(snapshot));
+    // ponytail: 이름저장 데이터도 불러올 때 표준형으로 정규화
+    state.teachers = state.teachers.map(normalizeTeacherStrings);
     state.selectedCells = [];
     rerenderAll();
     closeLoadModal();
@@ -653,6 +705,29 @@ function resetSection(section) {
   toast(`${labels[section] ?? section} 초기화 완료`);
 }
 
+// RFC4180 한 줄 파싱: 큰따옴표로 감싼 필드 안의 쉼표를 보존
+// ponytail: 엑셀은 칸에 "1-3, 2-1"처럼 쉼표가 있으면 자동으로 따옴표로 감싸서 저장한다.
+//   그래서 칸 안에서도 쉼표(", ")로 통일할 수 있다. 옛 세미콜론 파일도 그대로 읽힌다.
+function parseCSVLine(line) {
+  const out = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; }
+        else inQ = false;
+      } else cur += ch;
+    } else {
+      if (ch === '"') inQ = true;
+      else if (ch === ',') { out.push(cur); cur = ''; }
+      else cur += ch;
+    }
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
 function importTeacherCSV(text) {
   // ponytail: 기존 목록을 완전히 교체 — 덮어쓰기(merge) 아님
   const lines = text.trim().split('\n');
@@ -660,24 +735,30 @@ function importTeacherCSV(text) {
   const errors = [];
 
   const teachers = dataLines.map((line, rowIdx) => {
-    const parts = line.split(',').map(s => s.trim());
+    const parts = parseCSVLine(line);
     const [name, prevWorkload, forbiddenRooms, unavailableSlots, requiredSlotStr, requiredRoleStr] = parts;
 
-    if (requiredSlotStr || requiredRoleStr) {
-      const slots = requiredSlotStr ? requiredSlotStr.split(';').map(s => s.trim()).filter(Boolean) : [];
-      const roles = requiredRoleStr ? requiredRoleStr.split(';').map(s => s.trim()).filter(Boolean) : [];
-      if (slots.length !== roles.length) {
+    // 표준형으로 정규화 (시간 일차-교시, 항목 ", ")
+    const normRooms = normalizeRoomStr(forbiddenRooms || '');
+    const normUnavail = normalizeSlotStr(unavailableSlots || '');
+    const normReqSlot = normalizeSlotStr(requiredSlotStr || '');
+    const normReqRole = normalizeRoleStr(requiredRoleStr || '');
+
+    if (normReqSlot || normReqRole) {
+      const slotsArr = normReqSlot ? normReqSlot.split(',').map(s => s.trim()).filter(Boolean) : [];
+      const rolesArr = normReqRole ? normReqRole.split(',').map(s => s.trim()).filter(Boolean) : [];
+      if (slotsArr.length !== rolesArr.length) {
         errors.push(
           `${rowIdx + 2}행 (${name || '?'}): ` +
-          `반드시들어가야하는시간 ${slots.length}개 ≠ 감독유형 ${roles.length}개 — 개수가 일치해야 합니다.`
+          `고정시간 ${slotsArr.length}개 ≠ 감독유형 ${rolesArr.length}개 — 개수가 일치해야 합니다.`
         );
       }
-      slots.forEach((s, si) => {
-        if (!/^\d+_\d+$/.test(s)) {
-          errors.push(`${rowIdx + 2}행 (${name || '?'}): 반드시들어가야하는시간 "${s}"의 형식이 올바르지 않습니다. (올바른 형식: 일차_교시, 예: 1_2)`);
+      slotsArr.forEach(s => {
+        if (!/^\d+-\d+$/.test(s)) {
+          errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 "${s}"의 형식이 올바르지 않습니다. (올바른 형식: 일차-교시, 예: 1-3)`);
         }
       });
-      roles.forEach((r, ri) => {
+      rolesArr.forEach(r => {
         if (r !== '1' && r !== '2') {
           errors.push(`${rowIdx + 2}행 (${name || '?'}): 감독유형 "${r}"은 1(정감독) 또는 2(부감독)만 입력 가능합니다.`);
         }
@@ -688,10 +769,10 @@ function importTeacherCSV(text) {
       name: name || '',
       quota: 0,
       prevWorkload: parseFloat(prevWorkload) || 0,
-      forbiddenRooms: forbiddenRooms || '',
-      unavailableSlots: unavailableSlots || '',
-      requiredSlotStr: requiredSlotStr || '',
-      requiredRoleStr: requiredRoleStr || '',
+      forbiddenRooms: normRooms,
+      unavailableSlots: normUnavail,
+      requiredSlotStr: normReqSlot,
+      requiredRoleStr: normReqRole,
     };
   });
 
@@ -717,7 +798,7 @@ function importRoomCSV(text) {
 }
 
 function downloadTeacherCSVTemplate() {
-  const header = '이름,이전누적업무강도,배정불가고사실(세미콜론구분),못들어가는시간(일차_교시_세미콜론구분),반드시들어가야하는시간(일차_교시_세미콜론구분),감독유형(1정감독2부감독_세미콜론구분)';
+  const header = '이름,이전누적업무강도,제외고사실,제외시간,고정시간,감독유형';
   downloadCSV(header, '교사목록_양식.csv');
 }
 
@@ -739,6 +820,7 @@ function downloadCSV(content, filename) {
 // ─── 뮤테이션 핸들러 ─────────────────────────────────────────────────────────
 
 window.updateTeacher = (idx, key, val) => { state.teachers[idx][key] = val; };
+window.updateTeacherField = updateTeacherField;
 window.updateRole = (idx, key, val) => { state.roles[idx][key] = val; };
 window.updateExamDay = (idx, key, val) => { state.examDays[idx][key] = val; };
 window.updateTeacherQuota = updateTeacherQuota;
@@ -752,7 +834,7 @@ window.removeRole = (idx) => { state.roles.splice(idx, 1); renderRoleList(); };
 window.removeExamDay = (idx) => { state.examDays.splice(idx, 1); renderExamDayList(); };
 
 window.addTeacher = () => {
-  state.teachers.push({ name: '새교사', quota: 0, prevWorkload: 0, forbiddenRooms: '', unavailableSlots: [] });
+  state.teachers.push({ name: '새교사', quota: 0, prevWorkload: 0, forbiddenRooms: '', unavailableSlots: '', requiredSlotStr: '', requiredRoleStr: '' });
   renderTeacherList();
 };
 window.addRoom = () => {
