@@ -682,6 +682,7 @@ function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomR
         }
       }
   }
+  }
 
   return roomShortages;
 }
