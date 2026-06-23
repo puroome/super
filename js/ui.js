@@ -7,6 +7,7 @@ import {
   buildSaveSnapshot, applySnapshotToState, emptyState,
   csvField, gridCellDisplay, normalizeSlotStr,
   parseUnavailableSlots, parseRequiredSlots,
+  pruneRoomRequirements, aggregateRoomRequirements,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
@@ -221,16 +222,18 @@ function updateRoomReq(dayIdx, period, roleIdx, roomName, count) {
 }
 
 function syncRequirements() {
-  state.requirements = [];
-  const map = {};
-  state.roomRequirements.forEach(({ dayIdx, period, roleIdx, count }) => {
-    const key = `${dayIdx}_${period}_${roleIdx}`;
-    map[key] = (map[key] ?? 0) + count;
-  });
-  for (const [key, count] of Object.entries(map)) {
-    const [dayIdx, period, roleIdx] = key.split('_').map(Number);
-    state.requirements.push({ dayIdx, period, roleIdx, count });
-  }
+  state.requirements = aggregateRoomRequirements(state.roomRequirements);
+}
+
+// ponytail: 고사실 이름이 바뀌거나 삭제되면, 배정설정(roomRequirements)에 남아있는
+//   "더이상 없는 고사실명" 항목은 화면(배정설정 탭)에는 안 보이지만 자동배정 알고리즘은
+//   그 항목을 그대로 읽어서 옛 고사실명을 계속 써버린다(고아 데이터). 고사실 목록이 바뀔 때마다
+//   이 함수로 정리해야 자동배정 결과에 옛 고사실명이 남는 문제를 막을 수 있다.
+function pruneStaleRoomRequirements() {
+  const before = state.roomRequirements.length;
+  state.roomRequirements = pruneRoomRequirements(state.roomRequirements, state.rooms);
+  syncRequirements();
+  return before - state.roomRequirements.length;
 }
 
 function downloadRequirementsCSVTemplate() {
@@ -659,7 +662,7 @@ function resetSection(section) {
   if (!confirm(`"${labels[section] ?? section}" 데이터를 초기화합니다. 계속할까요?`)) return;
   if (section === 'examDays') { state.examDays = []; renderExamDayList(); }
   else if (section === 'teachers') { state.teachers = []; renderTeacherList(); }
-  else if (section === 'rooms') { state.rooms = []; renderRoomList(); }
+  else if (section === 'rooms') { state.rooms = []; pruneStaleRoomRequirements(); renderRoomList(); renderRequirementsTab(); }
   else if (section === 'roles') { state.roles = []; renderRoleList(); }
   else if (section === 'requirements') {
     state.requirements = [];
@@ -757,8 +760,11 @@ function importRoomCSV(text) {
   // ponytail: 기존 목록을 완전히 교체 — 덮어쓰기(merge) 아님
   const lines = text.trim().split('\n').slice(1);
   state.rooms = lines.map(l => l.trim()).filter(Boolean);
+  const removed = pruneStaleRoomRequirements();
   renderRoomList();
-  toast(`고사실 ${state.rooms.length}개 가져오기 완료 (기존 목록 교체)`);
+  renderRequirementsTab();
+  toast(`고사실 ${state.rooms.length}개 가져오기 완료 (기존 목록 교체)`
+    + (removed ? ` · 이름이 바뀌어 더이상 없는 고사실의 배정감독수 설정 ${removed}건 삭제됨 — 배정설정 탭에서 다시 입력하세요` : ''), 5000);
 }
 
 function downloadTeacherCSVTemplate() {
@@ -796,7 +802,12 @@ window.onCellClick = onCellClick;
 window.onCellDblClick = onCellDblClick;
 
 window.removeTeacher = (idx) => { state.teachers.splice(idx, 1); renderTeacherList(); };
-window.removeRoom = (idx) => { state.rooms.splice(idx, 1); renderRoomList(); };
+window.removeRoom = (idx) => {
+  state.rooms.splice(idx, 1);
+  pruneStaleRoomRequirements();
+  renderRoomList();
+  renderRequirementsTab();
+};
 window.removeRole = (idx) => { state.roles.splice(idx, 1); renderRoleList(); };
 window.removeExamDay = (idx) => { state.examDays.splice(idx, 1); renderExamDayList(); };
 

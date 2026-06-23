@@ -63,6 +63,25 @@ function parseRequiredSlots(slotStr, roleStr, slots) {
   });
 }
 
+// 더이상 존재하지 않는 고사실명을 가진 배정감독수 설정을 제거 (고사실 목록 변경 시 고아 데이터 방지)
+function pruneRoomRequirements(roomRequirements, rooms) {
+  const validRooms = new Set(rooms);
+  return roomRequirements.filter(r => validRooms.has(r.roomName));
+}
+
+// roomRequirements(고사실별 배정감독수)를 날짜/교시/보직별 합계로 집계
+function aggregateRoomRequirements(roomRequirements) {
+  const map = {};
+  roomRequirements.forEach(({ dayIdx, period, roleIdx, count }) => {
+    const key = `${dayIdx}_${period}_${roleIdx}`;
+    map[key] = (map[key] ?? 0) + count;
+  });
+  return Object.entries(map).map(([key, count]) => {
+    const [dayIdx, period, roleIdx] = key.split('_').map(Number);
+    return { dayIdx, period, roleIdx, count };
+  });
+}
+
 // 자동배정 결과 그리드의 셀 1칸을 어떻게 표시할지 결정.
 // 우선순위: 고정시간으로 배정된 영역(파랑) > 제외시간 x(빨강) > 기본(흰색)
 // 보직별 색 구분은 안 함(인쇄 출력에서 확인) — [역할번호] 표기도 화면에는 안 보여줌(불필요한 정보).
@@ -969,4 +988,6 @@ export {
   normalizeSlotStr,
   parseUnavailableSlots,
   parseRequiredSlots,
+  pruneRoomRequirements,
+  aggregateRoomRequirements,
 };
