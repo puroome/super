@@ -107,7 +107,7 @@ function gridCellDisplay(cell, isFixed, isManualFixed) {
   if (cell === 'x') return { bg, text: 'X' };
   const roleIdx = extractRole(cell);
   const room = extractRoom(cell);
-  const text = roleIdx > 0 ? (room || cell) : cell;
+  const text = roleIdx > 0 ? room : cell;
   return { bg, text };
 }
 
@@ -669,7 +669,7 @@ function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomR
       for (let i = 1; i <= tCount; i++) {
         if (extractRole(String(data[i][j])) === r) {
           // ponytail: 고정 셀이 이미 고사실 정보를 갖고 있으면 건너뜀(idx 증가 없음)
-          if (fixedMap[i][j] && extractRoom(String(data[i][j]))) { continue; }
+          if (fixedMap[i][j] && extractRoom(String(data[i][j])).length > 0 && !String(data[i][j]).startsWith('[')) { continue; }
           if (idx < shuffled.length) {
             const room = shuffled[idx];
             const actualRole = getRoleByRoomName(room, r);
