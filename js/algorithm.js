@@ -292,64 +292,61 @@ function assignAll(input) {
     }
   }
 
-  // 슬롯×보직 조합을 필요인원 많은 순으로 정렬 (병목 슬롯 먼저)
-  const tasks = [];
+  // ponytail: 슬롯별로 모든 보직을 한 번에 처리 — 강도 낮은 교사부터 강도 높은 보직(r=1) 우선 배정
+  //   같은 슬롯에서 정감독/부감독 분리 처리 시 한 교사가 부감독 몰아받는 문제 해결
+  //   O(슬롯 × 교사²) — 교사/슬롯 수백 이하에서 충분히 빠름
   for (let j = 1; j <= sCount; j++) {
     const { dayIdx, period } = slots[j - 1];
+
+    // 이 슬롯에서 필요한 보직별 잔여 정원 계산 (고정 배정 차감)
+    const remain = new Array(roleCount + 1).fill(0);
     for (let r = 1; r <= roleCount; r++) {
-      const need = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
-      if (need > 0) tasks.push({ j, r, need });
+      remain[r] = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
     }
-  }
-  tasks.sort((a, b) => b.need - a.need);
-
-  for (const { j, r } of tasks) {
-    const { dayIdx, period } = slots[j - 1];
-    const need = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
-
-    // 이미 배정된 수 계산 (고정 포함)
-    let filled = 0;
     for (let i = 1; i <= tCount; i++) {
-      const cellRole = extractRole(String(data[i][j]));
-      if (cellRole === r) filled++;
-      // data[i][j] === 1 (보직미정 고정)은 나중에 assignRoles에서 처리
+      const preRole = extractRole(String(data[i][j]));
+      if (preRole > 0 && remain[preRole] > 0) remain[preRole]--;
     }
+    const totalRemain = remain.reduce((s, v) => s + v, 0);
+    if (totalRemain <= 0) continue;
 
-    let remaining = need - filled;
-    if (remaining <= 0) continue;
-
-    // 후보 교사: 강도 낮은 순 정렬, 동점은 셔플
-    // ponytail: 연속 3교시 제한 — 불가피한 경우 제약 완화 후 재시도
-    for (let pass = 0; pass < 2 && remaining > 0; pass++) {
-      const allowConsec = pass === 1; // 2번째 패스에선 연속 제한 완화
-
+    // 후보 교사 수집 — 연속 3교시 제한 (2번째 패스에서 완화)
+    for (let pass = 0; pass < 2; pass++) {
       const candidates = [];
       for (let i = 1; i <= tCount; i++) {
-        if (data[i][j] !== '' && data[i][j] !== 0) continue; // 이미 뭔가 있음
+        if (data[i][j] !== '' && data[i][j] !== 0) continue;
         if (fixedMap[i][j]) continue;
-        if (allowConsec ? false : wouldExceedConsecutive(data, i, j, slots, daySlotMap)) continue;
+        if (pass === 0 && wouldExceedConsecutive(data, i, j, slots, daySlotMap)) continue;
         candidates.push(i);
       }
 
-      // 동점 그룹별 셔플로 랜덤성 보장
+      // 강도 낮은 순 정렬, 동점 구간은 셔플로 랜덤성 보장
       candidates.sort((a, b) => workload[a] - workload[b]);
-      // 동점 구간 셔플
       let ci = 0;
       while (ci < candidates.length) {
         let end = ci + 1;
         while (end < candidates.length && workload[candidates[end]] === workload[candidates[ci]]) end++;
-        const group = candidates.slice(ci, end);
-        shuffle(group).forEach((v, k) => { candidates[ci + k] = v; });
+        shuffle(candidates.slice(ci, end)).forEach((v, k) => { candidates[ci + k] = v; });
         ci = end;
       }
 
+      // 강도 높은 보직(r=1 정감독)부터 순서대로 배정
+      // ponytail: roles 순서가 정감독→부감독이라 가정. 순서가 다르면 workload 기준 내림차순 정렬 필요.
       for (const i of candidates) {
-        if (remaining <= 0) break;
-        // ponytail: 보직까지 바로 확정 → assignRoles 이중계산 방지
-        data[i][j] = `[${r}]`;
-        workload[i] += roles[r - 1]?.workload ?? 0;
-        remaining--;
+        let assigned = false;
+        for (let r = 1; r <= roleCount; r++) {
+          if (remain[r] <= 0) continue;
+          data[i][j] = `[${r}]`;
+          workload[i] += roles[r - 1]?.workload ?? 0;
+          remain[r]--;
+          assigned = true;
+          break;
+        }
+        if (!assigned) break; // 모든 정원 소진
+        if (remain.reduce((s, v) => s + v, 0) === 0) break;
       }
+
+      if (remain.reduce((s, v) => s + v, 0) === 0) break; // 모두 채웠으면 다음 슬롯
     }
   }
 
