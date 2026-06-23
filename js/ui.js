@@ -37,7 +37,17 @@ const state = {
   slots: [],
   selectedCells: [],
   swapHistory: [],
+  // ponytail: 자동배정 탭 그리드에서 직접 지정하는 제외시간/고정(시간) 상태.
+  // key: 교사i(1-based) -> { "dayIdx_period": true(제외) | {role:null|1|2}(고정) }
+  excludedCells: {},
+  preFixed: {},
+  gridMode: null,       // 'exclude' | 'fixed' | null
+  dragActive: false,
+  dragAction: null,      // true=설정, false=해제
 };
+
+// 마지막으로 그린 그리드의 슬롯 배열 캐시 (클릭/드래그/우클릭 핸들러에서 공용 사용)
+let gridSlots = [];
 
 // ─── 탭 전환 ─────────────────────────────────────────────────────────────────
 
@@ -48,7 +58,7 @@ function initTabs() {
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(btn.dataset.tab).classList.add('active');
-      if (btn.dataset.tab === 'tab-assign') renderAssignGrid();
+      if (btn.dataset.tab === 'tab-assign') { seedGridFromTeacherText(); renderAssignGrid(); }
       if (btn.dataset.tab === 'tab-table') renderSupervisorTable();
     });
   });
@@ -92,9 +102,6 @@ function renderTeacherList() {
       <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
       <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
       <td><input value="${t.forbiddenRooms ?? ''}" title="제외 고사실 (예: 101, 102)" onchange="updateTeacherField(${i},'forbiddenRooms',this)" style="width:90px"></td>
-      <td><input value="${t.unavailableSlots ?? ''}" title="제외 시간: 12=1일차 2교시, 3=3일차 전체 (예: 11, 22, 4)" onchange="updateTeacherField(${i},'unavailableSlots',this)" style="width:90px"></td>
-      <td><input value="${t.requiredSlotStr ?? ''}" title="고정 시간: 12=1일차 2교시 (예: 12, 21)" onchange="updateTeacherField(${i},'requiredSlotStr',this)" style="width:90px"></td>
-      <td><input value="${t.requiredRoleStr ?? ''}" title="직접 입력하거나, 표 헤더의 유형을 클릭해 전체 고정감독 유형을 시간순서대로 입력하세요." onchange="updateTeacherField(${i},'requiredRoleStr',this)" style="width:70px"></td>
       <td><button onclick="removeTeacher(${i})">삭제</button></td>
     </tr>
   `).join('');
@@ -231,22 +238,262 @@ function importRequirementsCSV(text) {
 
 // ─── 탭3: 자동배정 ───────────────────────────────────────────────────────────
 
+// ─── 탭3: 자동배정 — 제외/고정(시간) 그리드 헬퍼 ────────────────────────────────
+
+function slotKey(dayIdx, period) { return `${dayIdx}_${period}`; }
+
+function ensureCellMap(map, i) {
+  if (!map[i]) map[i] = {};
+  return map[i];
+}
+
+function slotIdxFromKey(key, slots) {
+  const [d, p] = key.split('_').map(Number);
+  const idx = slots.findIndex(s => s.dayIdx === d && s.period === p);
+  return idx >= 0 ? idx + 1 : 0;
+}
+
+function keyToToken(key) {
+  const [d, p] = key.split('_');
+  return `${d}${p}`;
+}
+
+// CSV 업로드(또는 예전 방식으로 저장된 데이터)의 제외시간/고정시간/유형 텍스트를
+// 그리드 상태(excludedCells/preFixed)로 변환하고, 변환이 끝난 텍스트는 비워서
+// 다음에 또 중복 반영되지 않도록 한다. 시험 날짜가 아직 없으면 그대로 둔다(유실 방지).
+function seedGridFromTeacherText() {
+  const slots = buildSlots(state.examDays);
+  if (!slots.length) return;
+
+  state.teachers.forEach((t, idx) => {
+    const i = idx + 1;
+
+    if (t.unavailableSlots && t.unavailableSlots.trim()) {
+      const slotIdxs = parseUnavailableSlots(t.unavailableSlots, slots);
+      if (slotIdxs.length) {
+        const m = ensureCellMap(state.excludedCells, i);
+        slotIdxs.forEach(j => { m[slotKey(slots[j - 1].dayIdx, slots[j - 1].period)] = true; });
+      }
+      t.unavailableSlots = '';
+    }
+
+    if (t.requiredSlotStr && t.requiredSlotStr.trim()) {
+      const roleProvided = !!(t.requiredRoleStr && t.requiredRoleStr.trim());
+      const parsedReq = parseRequiredSlots(t.requiredSlotStr, t.requiredRoleStr || '', slots);
+      if (parsedReq.length) {
+        const m = ensureCellMap(state.preFixed, i);
+        parsedReq.forEach(({ slotIdx, roleIdx }) => {
+          const key = slotKey(slots[slotIdx - 1].dayIdx, slots[slotIdx - 1].period);
+          m[key] = { role: roleProvided ? roleIdx : null };
+        });
+      }
+      t.requiredSlotStr = '';
+      t.requiredRoleStr = '';
+    }
+  });
+}
+
+// 한 셀의 표시 상태(배경색/텍스트/툴팁) 계산.
+// 배정 결과(state.data)가 아직 없어도(자동배정 실행 전) 제외/고정 표시는 보여야 한다.
+function computeCellVisual(i, j, key) {
+  const rawCell = state.data ? String(state.data[i]?.[j] ?? '') : '';
+  const isExcluded = !!state.excludedCells[i]?.[key];
+  const fixedObj = state.preFixed[i]?.[key];
+  const isManualFixed = !!state.fixedCells[i]?.[j];
+
+  if (isExcluded) {
+    return { bg: '#fbdada', text: 'X', title: '제외 시간 — [제외] 모드로 클릭/드래그하면 해제' };
+  }
+
+  if (fixedObj) {
+    const { text: roomText } = gridCellDisplay(rawCell, true, false);
+    const roleLabel = fixedObj.role === 1 ? '정' : fixedObj.role === 2 ? '부' : '?';
+    const text = roomText || roleLabel;
+    const title = fixedObj.role
+      ? `고정(시간) - ${fixedObj.role === 1 ? '정감독' : '부감독'} ([고정(시간)] 모드에서 더블클릭: 유형 변경 / 클릭: 해제)`
+      : '⚠️ 고정(시간) - 유형 미입력! [고정(시간)] 모드에서 이 칸을 더블클릭해 1(정감독) 또는 2(부감독)를 입력하세요';
+    return { bg: '#cfe3fa', text, title };
+  }
+
+  const { bg, text } = gridCellDisplay(rawCell, isManualFixed, isManualFixed);
+  const title = isManualFixed ? '고정됨 (더블클릭으로 해제)' : '클릭: 선택(swap용) / 더블클릭: 고정';
+  return { bg, text, title };
+}
+
+function setGridMode(mode) {
+  state.gridMode = state.gridMode === mode ? null : mode;
+  state.dragActive = false;
+  state.selectedCells = [];
+  renderAssignGrid();
+}
+window.toggleExcludeMode = () => setGridMode('exclude');
+window.toggleFixedMode = () => setGridMode('fixed');
+
+// 드래그 중인 칸 하나에 현재 모드를 적용. 이미 '다른' 모드 상태인 칸은 건너뛴다.
+function applyGridModeToCell(i, j, key) {
+  if (!state.gridMode) return;
+  const isExcludedNow = !!state.excludedCells[i]?.[key];
+  const isFixedNow = !!state.preFixed[i]?.[key];
+
+  if (state.gridMode === 'exclude' && isFixedNow) return;   // 고정 칸은 건너뛰기
+  if (state.gridMode === 'fixed' && isExcludedNow) return;  // 제외 칸은 건너뛰기
+  if (state.fixedCells[i]?.[j]) return; // 배정 후 더블클릭으로 잠긴 칸은 보호
+
+  if (state.gridMode === 'exclude') {
+    const m = ensureCellMap(state.excludedCells, i);
+    if (state.dragAction) m[key] = true;
+    else {
+      delete m[key];
+      if (!Object.keys(m).length) delete state.excludedCells[i];
+    }
+  } else {
+    const m = ensureCellMap(state.preFixed, i);
+    if (state.dragAction) { if (!m[key]) m[key] = { role: null }; }
+    else {
+      delete m[key];
+      if (!Object.keys(m).length) delete state.preFixed[i];
+    }
+  }
+  renderAssignGrid();
+}
+
+// 고정(시간) 모드에서 파란 칸을 더블클릭하면 셀 안에 직접 입력창을 띄운다 (네이티브 팝업 없음)
+function startFixedRoleEdit(i, j, key) {
+  const td = document.querySelector(`#assign-grid-wrap td[data-i="${i}"][data-j="${j}"]`);
+  if (!td) return;
+  const current = state.preFixed[i]?.[key];
+
+  td.innerHTML = '';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.inputMode = 'numeric';
+  input.maxLength = 1;
+  input.value = current?.role ? String(current.role) : '';
+  input.style.width = '26px';
+  input.style.textAlign = 'center';
+  input.style.fontSize = '11px';
+  input.style.padding = '1px';
+  input.title = '1=정감독, 2=부감독';
+  td.appendChild(input);
+  input.focus();
+  input.select();
+
+  // 1, 2 외의 문자는 입력 자체를 막아서 잘못된 값 경고가 뜰 일이 없게 한다
+  input.addEventListener('input', () => {
+    input.value = input.value.replace(/[^12]/g, '').slice(0, 1);
+  });
+
+  let committed = false;
+  const commit = () => {
+    if (committed) return;
+    committed = true;
+    const v = input.value.trim();
+    if (v === '1' || v === '2') {
+      ensureCellMap(state.preFixed, i)[key] = { role: parseInt(v, 10) };
+    }
+    renderAssignGrid();
+  };
+  const cancel = () => {
+    if (committed) return;
+    committed = true;
+    renderAssignGrid();
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', commit);
+}
+
+let gridModeListenersBound = false;
+let pendingClick = null; // { i, j, key, timer } — 같은 칸 더블클릭인지 판별 대기 중인 첫 클릭
+
+function cancelPendingClickFor(i, j) {
+  if (pendingClick && pendingClick.i === i && pendingClick.j === j) {
+    clearTimeout(pendingClick.timer);
+    pendingClick = null;
+    return true;
+  }
+  return false;
+}
+
+function flushPendingClick() {
+  if (!pendingClick) return;
+  const { i, j, key, timer } = pendingClick;
+  clearTimeout(timer);
+  pendingClick = null;
+  applyGridModeToCell(i, j, key);
+}
+
+function setupGridModeListeners() {
+  if (gridModeListenersBound) return;
+  const wrap = document.getElementById('assign-grid-wrap');
+  if (!wrap) return;
+  gridModeListenersBound = true;
+
+  wrap.addEventListener('mousedown', (e) => {
+    if (!state.gridMode) return;
+    const td = e.target.closest('.grid-cell');
+    if (!td) return;
+    e.preventDefault();
+    const i = +td.dataset.i, j = +td.dataset.j, key = td.dataset.key;
+
+    // 같은 칸에 짧은 시간 안에 두번째 mousedown = 더블클릭의 일부.
+    // 클릭 토글은 절대 적용하지 않고 dblclick 핸들러에게 맡긴다.
+    if (cancelPendingClickFor(i, j)) {
+      state.dragActive = false;
+      return;
+    }
+    flushPendingClick(); // 다른 칸에 보류 중이던 클릭은 먼저 확정
+
+    state.dragActive = true;
+    const currentlyOn = state.gridMode === 'exclude'
+      ? !!state.excludedCells[i]?.[key]
+      : !!state.preFixed[i]?.[key];
+    state.dragAction = !currentlyOn;
+
+    // 곧바로 적용하지 않고 잠깐 대기 — 더블클릭이면 위에서 취소되고,
+    // 드래그로 다른 칸에 들어가면 mouseover에서 즉시 확정된다.
+    pendingClick = { i, j, key, timer: setTimeout(flushPendingClick, 220) };
+  });
+
+  wrap.addEventListener('mouseover', (e) => {
+    if (!state.dragActive || !state.gridMode) return;
+    const td = e.target.closest('.grid-cell');
+    if (!td) return;
+    const i = +td.dataset.i, j = +td.dataset.j, key = td.dataset.key;
+    if (pendingClick && pendingClick.i === i && pendingClick.j === j) return; // 같은 칸 — 대기 유지
+    flushPendingClick(); // 드래그가 확실해졌으니 첫 칸 먼저 확정
+    applyGridModeToCell(i, j, key);
+  });
+
+  document.addEventListener('mouseup', () => { state.dragActive = false; });
+}
+
 function renderAssignGrid() {
-  if (!state.data || !state.slots.length) {
+  setupGridModeListeners();
+
+  const slots = buildSlots(state.examDays);
+  gridSlots = slots;
+  const tCount = state.teachers.length;
+
+  if (!tCount || !slots.length) {
     document.getElementById('assign-grid-wrap').innerHTML =
-      '<p>자동배정을 실행하거나 저장된 배정을 불러오세요.</p>';
+      '<p>기본정보 탭에서 감독교사와 시험 날짜/교시를 먼저 입력하세요.</p>';
     return;
   }
 
-  const { data, slots, fixedCells } = state;
-  const tCount = state.teachers.length;
-  const sCount = slots.length;
+  const excludeBtn = document.getElementById('btn-exclude-mode');
+  if (excludeBtn) excludeBtn.classList.toggle('mode-on', state.gridMode === 'exclude');
+  const fixedBtn = document.getElementById('btn-fixed-mode');
+  if (fixedBtn) fixedBtn.classList.toggle('mode-on', state.gridMode === 'fixed');
 
   let html = `<div class="grid-scroll"><table class="assign-grid">
   <thead>
     <tr>
       <th>순번</th><th>이름</th><th>제외 고사실</th>
-      ${slots.map((s, idx) => {
+      ${slots.map((s) => {
         const day = state.examDays[s.dayIdx - 1];
         return `<th class="slot-header">${formatDate(day?.date)}<br>${s.period}교시</th>`;
       }).join('')}
@@ -257,33 +504,24 @@ function renderAssignGrid() {
 
   for (let i = 1; i <= tCount; i++) {
     const t = state.teachers[i - 1];
-    const requiredSlotIdxs = new Set(
-      parseRequiredSlots(t.requiredSlotStr || '', t.requiredRoleStr || '', slots).map(r => r.slotIdx)
-    );
     html += `<tr>
       <td>${i}</td>
       <td>${t.name}</td>
       <td>${t.forbiddenRooms || '-'}</td>
       ${slots.map((s, idx) => {
         const j = idx + 1;
-        const cell = String(data[i]?.[j] ?? '');
-        const isManualFixed = !!fixedCells[i]?.[j];
-        const isRequiredFixed = requiredSlotIdxs.has(j);
-        const isFixed = isManualFixed || isRequiredFixed;
-        const { bg, text } = gridCellDisplay(cell, isFixed, isManualFixed);
+        const key = slotKey(s.dayIdx, s.period);
+        const { bg, text, title } = computeCellVisual(i, j, key);
         const selClass = state.selectedCells.some(c => c.i === i && c.j === j) ? ' selected-cell' : '';
-        const title = isRequiredFixed ? '고정시간 설정에 의해 배정됨 (기본정보 탭에서 변경)'
-          : isManualFixed ? '고정됨 (더블클릭으로 해제)'
-          : '클릭: 선택 / 더블클릭: 고정';
-        return `<td class="grid-cell${selClass}" style="background:${bg}"
+        return `<td class="grid-cell${selClass}" data-i="${i}" data-j="${j}" data-key="${key}" style="background:${bg}"
           onclick="onCellClick(${i},${j})"
           ondblclick="onCellDblClick(${i},${j})"
           title="${title}"
         >${text}</td>`;
       }).join('')}
-      <td>${state.roleCounts[i - 1]?.counts.reduce((s, v) => s + v, 0) ?? 0}</td>
+      <td>${state.roleCounts[i - 1]?.counts?.reduce((s, v) => s + v, 0) ?? 0}</td>
       <td>${Math.round(state.workload[i] ?? 0)}</td>
-      ${state.roles.map((_, ri) => `<td>${state.roleCounts[i - 1]?.counts[ri + 1] ?? 0}</td>`).join('')}
+      ${state.roles.map((_, ri) => `<td>${state.roleCounts[i - 1]?.counts?.[ri + 1] ?? 0}</td>`).join('')}
     </tr>`;
   }
 
@@ -298,13 +536,15 @@ function renderAssignGrid() {
 }
 
 function onCellClick(i, j) {
-  const cell = String(state.data[i]?.[j] ?? '');
+  if (state.gridMode) return; // 모드 활성 중엔 mousedown 핸들러가 처리
+
+  const key = gridSlots[j - 1] ? slotKey(gridSlots[j - 1].dayIdx, gridSlots[j - 1].period) : null;
+  const cell = String(state.data?.[i]?.[j] ?? '');
   const isManualFixed = !!state.fixedCells[i]?.[j];
-  const t = state.teachers[i - 1];
-  const isRequiredFixed = t ? parseRequiredSlots(t.requiredSlotStr || '', t.requiredRoleStr || '', state.slots).some(r => r.slotIdx === j) : false;
+  const isPreFixed = key ? !!state.preFixed[i]?.[key] : false;
+  const isExcludedCell = (key ? !!state.excludedCells[i]?.[key] : false) || cell.toLowerCase() === 'x';
   const isEmpty = cell === '' || cell === '0' || cell === 0;
-  const isExcluded = cell.toLowerCase() === 'x';
-  if (isManualFixed || isRequiredFixed || isEmpty || isExcluded) return;
+  if (isManualFixed || isPreFixed || isEmpty || isExcludedCell) return;
 
   const idx = state.selectedCells.findIndex(c => c.i === i && c.j === j);
   if (idx >= 0) state.selectedCells.splice(idx, 1);
@@ -316,6 +556,17 @@ function onCellClick(i, j) {
 }
 
 function onCellDblClick(i, j) {
+  const key = gridSlots[j - 1] ? slotKey(gridSlots[j - 1].dayIdx, gridSlots[j - 1].period) : null;
+  cancelPendingClickFor(i, j); // 더블클릭이므로 보류 중이던 단일클릭 토글은 적용하지 않음
+
+  if (state.gridMode === 'fixed') {
+    // 고정(시간) 모드: 파란 칸(고정 지정된 칸)만 더블클릭으로 유형 입력, 다른 칸은 무시
+    if (key && state.preFixed[i]?.[key]) startFixedRoleEdit(i, j, key);
+    return;
+  }
+  if (state.gridMode === 'exclude') return; // 제외 모드에서는 더블클릭 동작 없음
+
+  // 평상시(모드 비활성) — 기존 수동 고정 토글
   if (!state.fixedCells[i]) state.fixedCells[i] = {};
   if (state.fixedCells[i][j]) {
     delete state.fixedCells[i][j];
@@ -362,97 +613,9 @@ window.undoSwap = (idx) => {
 
 function updateTeacherField(idx, key, inputEl) {
   let v = inputEl.value;
-  if (key === 'unavailableSlots' || key === 'requiredSlotStr') v = normalizeSlotStr(v);
-  else if (key === 'requiredRoleStr') v = normalizeRoleStr(v);
-  else if (key === 'forbiddenRooms') v = normalizeRoomStr(v);
+  if (key === 'forbiddenRooms') v = normalizeRoomStr(v);
   state.teachers[idx][key] = v;
   inputEl.value = v;
-}
-
-function splitCommaListForUI(str) {
-  return String(str ?? '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
-}
-
-function openAllRequiredRolePrompt() {
-  const slots = buildSlots(state.examDays);
-  if (!slots.length) {
-    toast('시험 날짜/교시를 먼저 입력하세요.');
-    return;
-  }
-
-  const tasks = [];
-  const invalids = [];
-  const roleArrays = state.teachers.map(t => splitCommaListForUI(normalizeRoleStr(t.requiredRoleStr || '')));
-
-  state.teachers.forEach((teacher, teacherIdx) => {
-    const slotText = normalizeSlotStr(teacher.requiredSlotStr || '');
-    const slotTokens = splitCommaListForUI(slotText);
-    if (!slotTokens.length) return;
-
-    slotTokens.forEach((token, tokenIdx) => {
-      const parsed = parseRequiredSlots(token, '', slots)[0];
-      if (!parsed) {
-        invalids.push(`${teacher.name || teacherIdx + 1} 선생님: ${token}`);
-        return;
-      }
-      const slot = slots[parsed.slotIdx - 1];
-      tasks.push({
-        teacherIdx,
-        tokenIdx,
-        teacherName: teacher.name || '',
-        dayIdx: slot.dayIdx,
-        period: slot.period,
-      });
-    });
-  });
-
-  if (invalids.length) {
-    alert('고정감독 시간 형식을 확인하세요. 예: 12 = 1일차 2교시\n\n' + invalids.join('\n'));
-    return;
-  }
-  if (!tasks.length) {
-    toast('입력된 고정감독 시간이 없습니다.');
-    return;
-  }
-
-  tasks.sort((a, b) =>
-    (a.dayIdx - b.dayIdx) ||
-    (a.period - b.period) ||
-    (a.teacherIdx - b.teacherIdx) ||
-    (a.tokenIdx - b.tokenIdx)
-  );
-
-  for (const task of tasks) {
-    const prev = roleArrays[task.teacherIdx]?.[task.tokenIdx];
-    const defaultValue = (prev === '1' || prev === '2') ? prev : '';
-    let answer;
-
-    while (true) {
-      answer = prompt(`${task.dayIdx}일차 ${task.period}교시 ${task.teacherName} 선생님
-1=정감독, 2=부감독`, defaultValue);
-      if (answer === null) return;
-      answer = answer.trim();
-      if (answer === '1' || answer === '2') break;
-      alert('1 또는 2만 입력하세요.');
-    }
-
-    if (!roleArrays[task.teacherIdx]) roleArrays[task.teacherIdx] = [];
-    roleArrays[task.teacherIdx][task.tokenIdx] = answer;
-  }
-
-  state.teachers.forEach((teacher, teacherIdx) => {
-    const slotCount = splitCommaListForUI(normalizeSlotStr(teacher.requiredSlotStr || '')).length;
-    if (!slotCount) return;
-    teacher.requiredRoleStr = (roleArrays[teacherIdx] || []).slice(0, slotCount).join(', ');
-  });
-
-  renderTeacherList();
-  toast('고정감독 유형 입력 완료');
-}
-
-// 기존 이름 호환용: 개별 유형칸 호출이 남아 있어도 전체 시간순서 입력을 실행
-function openRequiredRolePrompt() {
-  openAllRequiredRolePrompt();
 }
 
 // ─── 탭4: 감독표 ─────────────────────────────────────────────────────────────
@@ -482,7 +645,43 @@ function renderPersonalSelect() {
 
 // ─── 자동배정 실행 ────────────────────────────────────────────────────────────
 
+function findPendingFixedCells() {
+  const pending = [];
+  Object.keys(state.preFixed).forEach(iStr => {
+    const i = +iStr;
+    Object.entries(state.preFixed[i] || {}).forEach(([key, v]) => {
+      if (!v || (v.role !== 1 && v.role !== 2)) pending.push(i);
+    });
+  });
+  return [...new Set(pending)];
+}
+
+function buildTeacherSlotData(slots) {
+  return state.teachers.map((t, idx) => {
+    const i = idx + 1;
+    const unavailableSlots = Object.keys(state.excludedCells[i] || {})
+      .map(key => slotIdxFromKey(key, slots))
+      .filter(j => j > 0);
+    const requiredSlots = Object.entries(state.preFixed[i] || {})
+      .filter(([, v]) => v && (v.role === 1 || v.role === 2))
+      .map(([key, v]) => ({ slotIdx: slotIdxFromKey(key, slots), roleIdx: v.role }))
+      .filter(r => r.slotIdx > 0);
+    return { ...t, unavailableSlots, requiredSlots };
+  });
+}
+
 async function runAssign() {
+  const pendingTeacherIdxs = findPendingFixedCells();
+  if (pendingTeacherIdxs.length) {
+    const names = pendingTeacherIdxs.map(i => state.teachers[i - 1]?.name || `#${i}`).join(', ');
+    alert(
+      `⚠️ 고정(시간)으로 지정했지만 정/부 유형(1 또는 2)을 입력하지 않은 칸이 있습니다.\n` +
+      `[고정(시간)] 모드를 켜고 해당 칸(파란색, "?" 표시)을 더블클릭해서 유형을 입력한 후 다시 시도하세요.\n\n` +
+      `대상 교사: ${names}`
+    );
+    return;
+  }
+
   const btn = document.getElementById('btn-run');
   btn.disabled = true;
   btn.textContent = '배정 중...';
@@ -494,11 +693,7 @@ async function runAssign() {
     const slots = buildSlots(state.examDays);
 
     const result = assignAll({
-      teachers: state.teachers.map(t => ({
-        ...t,
-        unavailableSlots: parseUnavailableSlots(t.unavailableSlots || '', slots),
-        requiredSlots: parseRequiredSlots(t.requiredSlotStr || '', t.requiredRoleStr || '', slots),
-      })),
+      teachers: buildTeacherSlotData(slots),
       examDays: state.examDays,
       roles: state.roles,
       requirements: state.requirements,
@@ -553,6 +748,10 @@ async function loadAll() {
     state.examDays = basic.examDays ?? [];
     state.requirements = reqs.requirements ?? [];
     state.roomRequirements = reqs.roomRequirements ?? [];
+    state.excludedCells = basic.excludedCells ?? {};
+    state.preFixed = basic.preFixed ?? {};
+    // ponytail: 예전 방식(텍스트 입력)으로 저장된 데이터가 남아있으면 그리드 상태로 변환
+    seedGridFromTeacherText();
 
     if (assign) {
       const parsed = parseAssignment(assign);
@@ -578,7 +777,10 @@ async function loadAll() {
 async function saveAll() {
   try {
     await Promise.all([
-      saveBasic({ teachers: state.teachers, rooms: state.rooms, roles: state.roles, examDays: state.examDays }),
+      saveBasic({
+        teachers: state.teachers, rooms: state.rooms, roles: state.roles, examDays: state.examDays,
+        excludedCells: state.excludedCells, preFixed: state.preFixed,
+      }),
       saveRequirements({ requirements: state.requirements, roomRequirements: state.roomRequirements }),
     ]);
     if (state.data) {
@@ -723,15 +925,30 @@ function resetSection(section) {
     rooms: '고사실 목록',
     roles: '보직 및 업무강도',
     requirements: '배정설정',
+    assign: '자동배정 결과 · 제외시간 · 고정(시간) 표시',
   };
   const impactedCount = (section === 'examDays' || section === 'roles') ? state.roomRequirements.length : 0;
   const warn = impactedCount ? `\n⚠️ 배정설정 데이터 ${impactedCount}건도 함께 삭제됩니다.` : '';
   if (!confirm(`"${labels[section] ?? section}" 데이터를 초기화합니다.${warn}\n계속할까요?`)) return;
   if (section === 'examDays') { state.examDays = []; state.roomRequirements = []; syncRequirements(); renderExamDayList(); renderRequirementsTab(); }
-  else if (section === 'teachers') { state.teachers = []; renderTeacherList(); }
+  else if (section === 'teachers') { state.teachers = []; state.excludedCells = {}; state.preFixed = {}; renderTeacherList(); }
   else if (section === 'rooms') { state.rooms = []; pruneStaleRoomRequirements(); renderRoomList(); renderRequirementsTab(); }
   else if (section === 'roles') { state.roles = []; state.roomRequirements = []; syncRequirements(); renderRoleList(); renderRequirementsTab(); }
   else if (section === 'requirements') { state.requirements = []; state.roomRequirements = []; renderRequirementsTab(); }
+  else if (section === 'assign') {
+    state.data = null;
+    state.fixedCells = {};
+    state.workload = [];
+    state.roleCounts = [];
+    state.slots = [];
+    state.selectedCells = [];
+    state.swapHistory = [];
+    state.excludedCells = {};
+    state.preFixed = {};
+    state.gridMode = null;
+    state.dragActive = false;
+    renderAssignGrid();
+  }
   toast(`${labels[section] ?? section} 초기화 완료`);
 }
 
@@ -813,6 +1030,9 @@ function importTeacherCSV(text) {
   }
 
   state.teachers = teachers;
+  state.excludedCells = {};
+  state.preFixed = {};
+  seedGridFromTeacherText();
   renderTeacherList();
   toast(`교사 ${state.teachers.length}명 가져오기 완료`);
 }
@@ -834,9 +1054,15 @@ function importRoomCSV(text) {
 
 function downloadTeacherCSVTemplate() {
   const header = '이름,이전누적업무강도,제외고사실,제외시간,고정시간,감독유형';
-  const rows = state.teachers.map(t => [
-    t.name, t.prevWorkload ?? 0, t.forbiddenRooms ?? '', t.unavailableSlots ?? '', t.requiredSlotStr ?? '', t.requiredRoleStr ?? '',
-  ].map(csvField).join(','));
+  const rows = state.teachers.map((t, idx) => {
+    const i = idx + 1;
+    const unavailToken = Object.keys(state.excludedCells[i] || {}).map(keyToToken).join(', ');
+    const fixedEntries = Object.entries(state.preFixed[i] || {});
+    const fixedTimeToken = fixedEntries.map(([key]) => keyToToken(key)).join(', ');
+    const fixedRoleToken = fixedEntries.map(([, v]) => v?.role ?? '').join(', ');
+    return [t.name, t.prevWorkload ?? 0, t.forbiddenRooms ?? '', unavailToken, fixedTimeToken, fixedRoleToken]
+      .map(csvField).join(',');
+  });
   downloadCSV([header, ...rows].join('\n'), '교사목록_양식.csv');
 }
 
@@ -873,7 +1099,22 @@ function confirmStaleImpact(affectedCount, what) {
   );
 }
 
-window.removeTeacher = (idx) => { state.teachers.splice(idx, 1); renderTeacherList(); };
+function reindexTeacherMapsAfterRemoval(removedI) {
+  [state.excludedCells, state.preFixed, state.fixedCells].forEach(map => {
+    delete map[removedI];
+    Object.keys(map).map(Number).filter(k => k > removedI).sort((a, b) => a - b).forEach(k => {
+      map[k - 1] = map[k];
+      delete map[k];
+    });
+  });
+}
+
+window.removeTeacher = (idx) => {
+  const removedI = idx + 1;
+  state.teachers.splice(idx, 1);
+  reindexTeacherMapsAfterRemoval(removedI);
+  renderTeacherList();
+};
 window.removeRoom = (idx) => {
   const room = state.rooms[idx];
   const affected = state.roomRequirements.filter(r => r.roomName === room).length;
@@ -933,8 +1174,6 @@ window.loadNamedAndApply = loadNamedAndApply;
 window.deleteNamedConfirm = deleteNamedConfirm;
 window.runAssign = runAssign;
 window.doSwap = doSwap;
-window.openRequiredRolePrompt = openRequiredRolePrompt;
-window.openAllRequiredRolePrompt = openAllRequiredRolePrompt;
 window.downloadTeacherCSVTemplate = downloadTeacherCSVTemplate;
 window.downloadRoomCSVTemplate = downloadRoomCSVTemplate;
 window.downloadRequirementsCSVTemplate = downloadRequirementsCSVTemplate;

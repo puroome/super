@@ -91,20 +91,15 @@
         <button class="btn-outline" onclick="downloadTeacherCSVTemplate()">⬇ CSV양식 받기</button>
         <button class="btn-danger btn-sm" onclick="resetSection('teachers')">🗑 초기화</button>
       </div>
+      <p class="csv-hint" style="margin-bottom:6px">제외 시간 / 고정(시간) 지정은 <b>자동배정 탭</b>에서 셀을 클릭·드래그해서 설정하세요.</p>
       <div style="overflow-x:auto;margin-top:8px">
         <table>
           <thead>
             <tr>
-              <th rowspan="2">이름</th>
-              <th rowspan="2" style="cursor:pointer;user-select:none" onclick="openPrevWorkloadPicker(this)">이전누적강도 ▾</th>
-              <th rowspan="2">제외 고사실</th>
-              <th rowspan="2">제외 시간</th>
-              <th colspan="2">고정감독</th>
-              <th rowspan="2">삭제</th>
-            </tr>
-            <tr>
-              <th>시간</th>
-              <th style="cursor:pointer;user-select:none" title="클릭하면 고정감독 시간이 입력된 모든 교사를 시간순서대로 유형 입력" onclick="openAllRequiredRolePrompt()">유형 ▾</th>
+              <th>이름</th>
+              <th style="cursor:pointer;user-select:none" onclick="openPrevWorkloadPicker(this)">이전누적강도 ▾</th>
+              <th>제외 고사실</th>
+              <th>삭제</th>
             </tr>
           </thead>
           <tbody id="teacher-list"></tbody>
@@ -175,9 +170,12 @@
     <h2>🎯 자동배정</h2>
     <div class="assign-actions">
       <button id="btn-run" class="btn-run" onclick="runAssign()">🚀 자동배정 실행</button>
+      <button id="btn-exclude-mode" class="btn-outline btn-mode" onclick="toggleExcludeMode()">🚫 제외</button>
+      <button id="btn-fixed-mode" class="btn-outline btn-mode" onclick="toggleFixedMode()">📌 고정(시간)</button>
       <button id="btn-swap" class="btn-outline" onclick="doSwap()" disabled>⇄ 선택 셀 교환</button>
+      <button class="btn-danger" onclick="resetSection('assign')">🗑 초기화</button>
       <span style="color:#7a8599;font-size:11px">
-        셀 클릭: 선택(swap용) &nbsp;|&nbsp; 셀 더블클릭: 고정 토글
+        [제외]/[고정(시간)] 모드 ON 후 칸을 클릭·드래그 &nbsp;|&nbsp; 고정(파란) 칸은 [고정(시간)] 모드에서 더블클릭하면 정/부 입력 &nbsp;|&nbsp; 평상시 셀 클릭: 선택(swap용), 더블클릭: 고정 토글
       </span>
     </div>
     <div id="swap-history" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px"></div>

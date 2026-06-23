@@ -879,6 +879,8 @@ function buildSaveSnapshot(state) {
     examDays: state.examDays,
     requirements: state.requirements,
     roomRequirements: state.roomRequirements,
+    excludedCells: state.excludedCells ?? {},
+    preFixed: state.preFixed ?? {},
     assignment: state.data ? {
       data: state.data,
       fixedCells: state.fixedCells,
@@ -898,6 +900,8 @@ function applySnapshotToState(snapshot) {
     examDays: snapshot.examDays ?? [],
     requirements: snapshot.requirements ?? [],
     roomRequirements: snapshot.roomRequirements ?? [],
+    excludedCells: snapshot.excludedCells ?? {},
+    preFixed: snapshot.preFixed ?? {},
     data: a?.data ?? null,
     fixedCells: a?.fixedCells ?? {},
     workload: a?.workload ?? [],
@@ -910,6 +914,7 @@ function emptyState() {
   return {
     teachers: [], rooms: [], roles: [], examDays: [],
     requirements: [], roomRequirements: [],
+    excludedCells: {}, preFixed: {},
     data: null, fixedCells: {}, workload: [], roleCounts: [], slots: [],
   };
 }
