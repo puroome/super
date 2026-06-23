@@ -921,7 +921,7 @@ function assignAll(input) {
 }
 
 function swapCells(data, fixedMap, i1, j1, i2, j2) {
-  if (fixedMap[i1][j1] || fixedMap[i2][j2]) return false;
+  if (fixedMap[i1]?.[j1] || fixedMap[i2]?.[j2]) return false;
   const tmp = data[i1][j1];
   data[i1][j1] = data[i2][j2];
   data[i2][j2] = tmp;
