@@ -93,9 +93,10 @@
         <button class="btn-danger btn-sm" onclick="resetSection('teachers')">🗑 초기화</button>
       </div>
       <p class="csv-hint">
-        CSV 6열: <code>이름, 이전누적업무강도, 배정불가고사실, 못들어가는시간, 반드시들어가야하는시간, 감독유형</code><br>
-        여러 항목 구분: <code>세미콜론(;)</code> 사용 (예: <code>101;201</code> / <code>1_3;2_1</code>)<br>
-        반드시들어가야하는시간과 감독유형은 <strong>개수가 반드시 일치</strong>해야 합니다. (1=정감독, 2=부감독)<br>
+        CSV 6열: <code>이름, 이전누적업무강도, 제외고사실, 제외시간, 고정시간, 감독유형</code><br>
+        한 칸에 여러 항목: <code>쉼표(,)</code>로 구분 (예: <code>101, 102</code> / <code>1-3, 2-1</code>) — 엑셀에서 입력하면 자동으로 처리됩니다.<br>
+        시간 표기: <code>일차-교시</code> (예: 첫째날 3교시 → <code>1-3</code>, 둘째날 1교시 → <code>2-1</code>)<br>
+        <strong>고정시간</strong>과 <strong>감독유형</strong>은 <strong>개수가 반드시 일치</strong>해야 합니다. (1=정감독, 2=부감독)<br>
         고사실명에 <strong>"복도"</strong> 포함 시 자동으로 부감독(2)으로 처리됩니다.<br>
         <strong>CSV 업로드 시 기존 목록을 모두 지우고 새로 불러옵니다.</strong>
       </p>
@@ -106,9 +107,9 @@
               <th>이름</th>
               <th>배정할시간</th>
               <th>이전누적강도</th>
-              <th>배정불가고사실</th>
-              <th>못들어가는시간</th>
-              <th>반드시들어가야하는시간</th>
+              <th>제외 고사실</th>
+              <th>제외 시간</th>
+              <th>고정 시간</th>
               <th>감독유형</th>
               <th></th>
             </tr>
@@ -201,7 +202,7 @@
     <div style="background:#fffbe6;border:1px solid #ffe082;border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px">
       <strong>⚙️ 배정 전 확인사항</strong><br>
       · 교사별 "배정할시간" 합계 = 전체 필요감독 수 합계여야 합니다.<br>
-      · 배정불가 고사실은 쉼표로 구분해 입력하세요 (예: 1-1,2-3)<br>
+      · 제외 고사실은 쉼표로 구분해 입력하세요 (예: 101, 102)<br>
       · 고정셀(더블클릭)은 자동배정에서 변경되지 않습니다.
     </div>
 
