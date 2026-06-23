@@ -19,10 +19,34 @@ function normalizeSlotStr(str) {
   if (str == null || !String(str).trim()) return '';
   return String(str).split(/[,;]/).map(s => s.trim()).filter(Boolean)
     .map(tok => {
+      // 새 표준: 12 = 1일차 2교시. 예전 1_2 / 1-2 입력도 12로 변환.
       const m = tok.match(/^(\d+)[-_](\d+)$/);
-      return m ? `${m[1]}_${m[2]}` : tok;
+      return m ? `${m[1]}${m[2]}` : tok.replace(/\s+/g, '');
     })
     .join(', ');
+}
+
+function splitList(str) {
+  return String(str ?? '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
+}
+
+function findSlotIndex(slots, dayIdx, period) {
+  return slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
+}
+
+function parseSlotToken(token, slots) {
+  const normalized = normalizeSlotStr(token);
+  if (!/^\d{2,}$/.test(normalized)) return null;
+
+  // ponytail: 12는 1일차 2교시. 혹시 10일차처럼 두 자리 일차가 생겨도
+  // slots에 실제 존재하는 분할을 찾아서 처리한다.
+  for (let cut = 1; cut < normalized.length; cut++) {
+    const dayIdx = parseInt(normalized.slice(0, cut), 10);
+    const period = parseInt(normalized.slice(cut), 10);
+    const slotIdx = findSlotIndex(slots, dayIdx, period);
+    if (slotIdx > 0) return { dayIdx, period, slotIdx };
+  }
+  return null;
 }
 
 function csvField(v) {
@@ -32,28 +56,32 @@ function csvField(v) {
 
 function parseUnavailableSlots(str, slots) {
   if (!str || !str.trim()) return [];
-  return str.split(/[,;]/).map(s => s.trim()).filter(Boolean).flatMap(token => {
-    const [dayPart, periodPart] = token.split(/[-_]/);
-    const dayIdx = parseInt(dayPart);
-    const period = parseInt(periodPart);
-    if (isNaN(dayIdx) || isNaN(period)) return [];
-    const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
-    return j > 0 ? [j] : [];
-  });
+  const out = [];
+  for (const token of splitList(str)) {
+    const normalized = normalizeSlotStr(token);
+
+    // 제외시간 한 자리 숫자 = 해당 일차 전체 제외
+    if (/^\d$/.test(normalized)) {
+      const dayIdx = parseInt(normalized, 10);
+      slots.forEach((s, idx) => { if (s.dayIdx === dayIdx) out.push(idx + 1); });
+      continue;
+    }
+
+    const parsed = parseSlotToken(normalized, slots);
+    if (parsed) out.push(parsed.slotIdx);
+  }
+  return [...new Set(out)].sort((a, b) => a - b);
 }
 
 function parseRequiredSlots(slotStr, roleStr, slots) {
   if (!slotStr || !slotStr.trim()) return [];
-  const slotTokens = slotStr.split(/[,;]/).map(s => s.trim()).filter(Boolean);
-  const roleTokens = (roleStr || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  const slotTokens = splitList(slotStr);
+  const roleTokens = splitList(roleStr || '');
   return slotTokens.flatMap((token, idx) => {
-    const [dayPart, periodPart] = token.split(/[-_]/);
-    const dayIdx = parseInt(dayPart);
-    const period = parseInt(periodPart);
-    const roleIdx = parseInt(roleTokens[idx] ?? '1');
-    if (isNaN(dayIdx) || isNaN(period)) return [];
-    const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
-    return j > 0 ? [{ slotIdx: j, roleIdx: isNaN(roleIdx) ? 1 : roleIdx }] : [];
+    const parsed = parseSlotToken(token, slots);
+    if (!parsed) return [];
+    const roleIdx = parseInt(roleTokens[idx] ?? '1', 10);
+    return [{ slotIdx: parsed.slotIdx, roleIdx: isNaN(roleIdx) ? 1 : roleIdx }];
   });
 }
 

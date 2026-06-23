@@ -17,7 +17,7 @@ import {
   clearCurrentDocs, saveNamed, listSaves, loadNamed, deleteNamed,
 } from './firebase.js';
 import {
-  printFullTable, printPersonalTable, printAllPersonal,
+  printFullTable, printPersonalTable, printAllPersonal, downloadFullTableXLSX,
   formatDate, ROLE_COLORS,
 } from './print.js';
 
@@ -92,9 +92,9 @@ function renderTeacherList() {
       <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
       <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
       <td><input value="${t.forbiddenRooms ?? ''}" title="제외 고사실 (예: 101, 102)" onchange="updateTeacherField(${i},'forbiddenRooms',this)" style="width:90px"></td>
-      <td><input value="${t.unavailableSlots ?? ''}" title="제외 시간: 일차_교시 (예: 1_1, 2_3)" onchange="updateTeacherField(${i},'unavailableSlots',this)" style="width:90px"></td>
-      <td><input value="${t.requiredSlotStr ?? ''}" title="고정 시간: 일차_교시 (예: 1_2, 2_1)" onchange="updateTeacherField(${i},'requiredSlotStr',this)" style="width:90px"></td>
-      <td><input value="${t.requiredRoleStr ?? ''}" title="고정 시간의 감독유형: 1=정감독, 2=부감독 (쉼표 구분, 위 시간과 개수 일치)" onchange="updateTeacherField(${i},'requiredRoleStr',this)" style="width:70px"></td>
+      <td><input value="${t.unavailableSlots ?? ''}" title="제외 시간: 12=1일차 2교시, 3=3일차 전체 (예: 11, 22, 4)" onchange="updateTeacherField(${i},'unavailableSlots',this)" style="width:90px"></td>
+      <td><input value="${t.requiredSlotStr ?? ''}" title="고정 시간: 12=1일차 2교시 (예: 12, 21)" onchange="updateTeacherField(${i},'requiredSlotStr',this)" style="width:90px"></td>
+      <td><input value="${t.requiredRoleStr ?? ''}" title="직접 입력하거나, 표 헤더의 유형을 클릭해 전체 고정감독 유형을 시간순서대로 입력하세요." onchange="updateTeacherField(${i},'requiredRoleStr',this)" style="width:70px"></td>
       <td><button onclick="removeTeacher(${i})">삭제</button></td>
     </tr>
   `).join('');
@@ -367,6 +367,94 @@ function updateTeacherField(idx, key, inputEl) {
   else if (key === 'forbiddenRooms') v = normalizeRoomStr(v);
   state.teachers[idx][key] = v;
   inputEl.value = v;
+}
+
+function splitCommaListForUI(str) {
+  return String(str ?? '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
+}
+
+function openAllRequiredRolePrompt() {
+  const slots = buildSlots(state.examDays);
+  if (!slots.length) {
+    toast('시험 날짜/교시를 먼저 입력하세요.');
+    return;
+  }
+
+  const tasks = [];
+  const invalids = [];
+  const roleArrays = state.teachers.map(t => splitCommaListForUI(normalizeRoleStr(t.requiredRoleStr || '')));
+
+  state.teachers.forEach((teacher, teacherIdx) => {
+    const slotText = normalizeSlotStr(teacher.requiredSlotStr || '');
+    const slotTokens = splitCommaListForUI(slotText);
+    if (!slotTokens.length) return;
+
+    slotTokens.forEach((token, tokenIdx) => {
+      const parsed = parseRequiredSlots(token, '', slots)[0];
+      if (!parsed) {
+        invalids.push(`${teacher.name || teacherIdx + 1} 선생님: ${token}`);
+        return;
+      }
+      const slot = slots[parsed.slotIdx - 1];
+      tasks.push({
+        teacherIdx,
+        tokenIdx,
+        teacherName: teacher.name || '',
+        dayIdx: slot.dayIdx,
+        period: slot.period,
+      });
+    });
+  });
+
+  if (invalids.length) {
+    alert('고정감독 시간 형식을 확인하세요. 예: 12 = 1일차 2교시\n\n' + invalids.join('\n'));
+    return;
+  }
+  if (!tasks.length) {
+    toast('입력된 고정감독 시간이 없습니다.');
+    return;
+  }
+
+  tasks.sort((a, b) =>
+    (a.dayIdx - b.dayIdx) ||
+    (a.period - b.period) ||
+    (a.teacherIdx - b.teacherIdx) ||
+    (a.tokenIdx - b.tokenIdx)
+  );
+
+  for (const task of tasks) {
+    const prev = roleArrays[task.teacherIdx]?.[task.tokenIdx];
+    const defaultValue = (prev === '1' || prev === '2') ? prev : '';
+    let answer;
+
+    while (true) {
+      answer = prompt(
+  `${task.dayIdx}일차 ${task.period}교시 ${task.teacherName} 선생님`,
+  defaultValue
+);
+      if (answer === null) return;
+      answer = answer.trim();
+      if (answer === '1' || answer === '2') break;
+      alert('1 또는 2만 입력하세요.');
+    }
+
+    if (!roleArrays[task.teacherIdx]) roleArrays[task.teacherIdx] = [];
+    roleArrays[task.teacherIdx][task.tokenIdx] = answer;
+  }
+
+  state.teachers.forEach((teacher, teacherIdx) => {
+    const slotCount = splitCommaListForUI(normalizeSlotStr(teacher.requiredSlotStr || '')).length;
+    if (!slotCount) return;
+    teacher.requiredRoleStr = (roleArrays[teacherIdx] || []).slice(0, slotCount).join(', ');
+  });
+
+  renderTeacherList();
+  toast('고정감독 유형 입력 완료');
+}
+
+// 기존 이름 호환용: 개별 유형칸 호출이 남아 있어도 전체 시간순서 입력을 실행
+function openRequiredRolePrompt() {
+  openAllRequiredRolePrompt();
 }
 
 // ─── 탭4: 감독표 ─────────────────────────────────────────────────────────────
@@ -690,8 +778,14 @@ function importTeacherCSV(text) {
         errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 ${slotsArr.length}개 ≠ 감독유형 ${rolesArr.length}개 — 개수가 일치해야 합니다.`);
       }
       slotsArr.forEach(s => {
-        if (!/^\d+_\d+$/.test(s)) errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 "${s}"의 형식이 올바르지 않습니다.`);
+        if (!/^\d{2,}$/.test(s)) errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 "${s}"의 형식이 올바르지 않습니다. 예: 12 = 1일차 2교시`);
       });
+      if (state.examDays.length) {
+        const parsedSlots = parseRequiredSlots(normReqSlot, '', buildSlots(state.examDays));
+        if (parsedSlots.length !== slotsArr.length) {
+          errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 중 시험 날짜/교시에 없는 값이 있습니다.`);
+        }
+      }
       rolesArr.forEach(r => {
         if (r !== '1' && r !== '2') errors.push(`${rowIdx + 2}행 (${name || '?'}): 감독유형 "${r}"은 1(정감독) 또는 2(부감독)만 입력 가능합니다.`);
       });
@@ -833,16 +927,66 @@ window.loadNamedAndApply = loadNamedAndApply;
 window.deleteNamedConfirm = deleteNamedConfirm;
 window.runAssign = runAssign;
 window.doSwap = doSwap;
+window.openRequiredRolePrompt = openRequiredRolePrompt;
+window.openAllRequiredRolePrompt = openAllRequiredRolePrompt;
 window.downloadTeacherCSVTemplate = downloadTeacherCSVTemplate;
 window.downloadRoomCSVTemplate = downloadRoomCSVTemplate;
 window.downloadRequirementsCSVTemplate = downloadRequirementsCSVTemplate;
 
 window.showRequirementsTab = renderRequirementsTab;
 
-window.printFull = () => printFullTable({
-  data: state.data, slots: state.slots, teachers: state.teachers,
-  rooms: state.rooms, roles: state.roles, examDays: state.examDays,
-});
+
+function fullTableParams() {
+  return {
+    data: state.data, slots: state.slots, teachers: state.teachers,
+    rooms: state.rooms, roles: state.roles, examDays: state.examDays,
+  };
+}
+
+function hasAssignmentForOutput() {
+  if (!state.data || !state.slots.length) {
+    toast('배정 결과가 없습니다. 자동배정 탭에서 배정을 실행하세요.');
+    return false;
+  }
+  return true;
+}
+
+window.openFullTableOutputMenu = (btnEl) => {
+  document.getElementById('full-table-output-menu')?.remove();
+  if (!hasAssignmentForOutput()) return;
+
+  const menu = document.createElement('div');
+  menu.id = 'full-table-output-menu';
+  menu.className = 'output-menu';
+
+  const addItem = (label, onClick) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.textContent = label;
+    item.onclick = () => {
+      menu.remove();
+      onClick();
+    };
+    menu.appendChild(item);
+  };
+
+  addItem('파일저장', () => downloadFullTableXLSX(fullTableParams()));
+  addItem('인쇄', () => printFullTable(fullTableParams()));
+
+  document.body.appendChild(menu);
+  const rect = btnEl?.getBoundingClientRect?.();
+  if (rect) {
+    menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+    menu.style.left = (rect.left + window.scrollX) + 'px';
+  } else {
+    menu.style.top = '80px';
+    menu.style.left = '20px';
+  }
+  setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
+};
+
+// 기존 onclick 이름 호환용
+window.printFull = () => window.openFullTableOutputMenu();
 window.printPersonalByValue = (val) => {
   const idx = parseInt(val);
   if (!idx) return;
