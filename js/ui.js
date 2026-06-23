@@ -315,7 +315,7 @@ function renderAssignGrid() {
         const isManualFixed = !!fixedCells[i]?.[j];
         const isRequiredFixed = requiredSlotIdxs.has(j);
         const isFixed = isManualFixed || isRequiredFixed;
-        const { bg, text } = gridCellDisplay(cell, isFixed);
+        const { bg, text } = gridCellDisplay(cell, isFixed, isManualFixed);
         const selClass = state.selectedCells.some(c => c.i === i && c.j === j) ? ' selected-cell' : '';
         const title = isRequiredFixed ? '고정시간 설정에 의해 배정됨 (기본정보 탭에서 변경)'
           : isManualFixed ? '고정됨 (더블클릭으로 해제)'
@@ -358,7 +358,8 @@ function onCellDblClick(i, j) {
     delete state.fixedCells[i][j];
     if (!Object.keys(state.fixedCells[i]).length) delete state.fixedCells[i];
   } else {
-    state.fixedCells[i][j] = true;
+    // ponytail: 배정값(고사실 포함) 저장으로 재실행 시 시간+고사실 모두 고정
+    state.fixedCells[i][j] = state.data[i]?.[j] ?? 1;
   }
   renderAssignGrid();
 }
