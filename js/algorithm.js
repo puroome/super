@@ -691,7 +691,8 @@ function assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, workl
 // ─── 고사실배정 ──────────────────────────────────────────────────────────────
 
 function getRoleByRoomName(roomName, assignedRole) {
-  if (roomName && roomName.includes('복도')) return 2;
+  // ponytail: 고사실 이름에 '복도'가 들어가도 보직은 바꾸지 않는다.
+  // 보직은 배정설정에서 요구한 roleIdx 그대로 유지해야 감독표 탭에서 누락되지 않는다.
   return assignedRole;
 }
 

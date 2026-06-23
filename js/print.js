@@ -30,6 +30,33 @@ function wrapParens(str) {
 
 // ─── 감독표(전체) HTML 생성 ───────────────────────────────────────────────────
 
+function outputRoomName(cell) {
+  const role = extractRole(String(cell ?? ''));
+  if (role <= 0) return '';
+  const room = extractRoom(String(cell ?? '')).trim();
+  return room || '미배정';
+}
+
+function buildDisplayRooms({ data, slots, teachers, rooms, dayIdx, periods }) {
+  const displayRooms = [...rooms];
+  const seen = new Set(displayRooms);
+  const tCount = teachers.length;
+
+  periods.forEach(p => {
+    const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === p) + 1;
+    if (!j) return;
+    for (let i = 1; i <= tCount; i++) {
+      const room = outputRoomName(data[i]?.[j]);
+      if (room && !seen.has(room)) {
+        seen.add(room);
+        displayRooms.push(room);
+      }
+    }
+  });
+
+  return displayRooms;
+}
+
 function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
   const tCount = teachers.length;
   const roleCount = roles.length;
@@ -43,13 +70,14 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
     const dayIdx = di + 1;
     const periods = [];
     for (let p = day.startPeriod; p <= day.endPeriod; p++) periods.push(p);
+    const displayRooms = buildDisplayRooms({ data, slots, teachers, rooms, dayIdx, periods });
 
     const dayTitle = `<div class="day-title">${formatDate(day.date)} 감독 배정표</div>`;
 
     let tableHtml = `<table class="print-table" border="1" cellspacing="0" cellpadding="4">
       <thead><tr style="background:${headerBg};color:#000">
         <th class="h-text">교시</th><th class="h-text">보직</th>
-        ${rooms.map(r => `<th>${wrapParens(r)}</th>`).join('')}
+        ${displayRooms.map(r => `<th>${wrapParens(r)}</th>`).join('')}
         <th class="h-text">합계</th>
       </tr></thead><tbody>`;
 
@@ -58,13 +86,13 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
 
       for (let r = 1; r <= roleCount; r++) {
         const cellMap = {};
-        rooms.forEach(rm => { cellMap[rm] = []; });
+        displayRooms.forEach(rm => { cellMap[rm] = []; });
 
         if (j) {
           for (let i = 1; i <= tCount; i++) {
             const cell = String(data[i]?.[j] ?? '');
             const role = extractRole(cell);
-            const room = extractRoom(cell);
+            const room = outputRoomName(cell);
             if (role === r && room && cellMap[room] !== undefined) {
               cellMap[room].push(stripParens(teachers[i - 1].name));
             }
@@ -75,7 +103,7 @@ function buildFullTableHTML({ data, slots, teachers, rooms, roles, examDays }) {
         tableHtml += `<tr style="background:${bg}">`;
         if (r === 1) tableHtml += `<td rowspan="${roleCount}">${p}교시</td>`;
         tableHtml += `<td>${abbreviateRole(roles[r - 1]?.name)}</td>
-          ${rooms.map(room => `<td>${(cellMap[room] || []).join('<br>')}</td>`).join('')}
+          ${displayRooms.map(room => `<td>${(cellMap[room] || []).join('<br>')}</td>`).join('')}
           <td>${Object.values(cellMap).flat().length}</td>
         </tr>`;
       }
@@ -102,11 +130,12 @@ function buildFullTableSheets({ data, slots, teachers, rooms, roles, examDays })
     const dayIdx = di + 1;
     const periods = [];
     for (let p = day.startPeriod; p <= day.endPeriod; p++) periods.push(p);
+    const displayRooms = buildDisplayRooms({ data, slots, teachers, rooms, dayIdx, periods });
 
-    const colCount = rooms.length + 3;
+    const colCount = displayRooms.length + 3;
     const rows = [
       { cells: [`${formatDate(day.date)} 감독 배정표`] },
-      { cells: ['교시', '보직', ...rooms, '합계'] },
+      { cells: ['교시', '보직', ...displayRooms, '합계'] },
     ];
 
     periods.forEach((p) => {
@@ -114,13 +143,13 @@ function buildFullTableSheets({ data, slots, teachers, rooms, roles, examDays })
 
       for (let r = 1; r <= roleCount; r++) {
         const cellMap = {};
-        rooms.forEach(rm => { cellMap[rm] = []; });
+        displayRooms.forEach(rm => { cellMap[rm] = []; });
 
         if (j) {
           for (let i = 1; i <= tCount; i++) {
             const cell = String(data[i]?.[j] ?? '');
             const role = extractRole(cell);
-            const room = extractRoom(cell);
+            const room = outputRoomName(cell);
             if (role === r && room && cellMap[room] !== undefined) {
               cellMap[room].push(stripParens(teachers[i - 1].name));
             }
@@ -131,7 +160,7 @@ function buildFullTableSheets({ data, slots, teachers, rooms, roles, examDays })
           cells: [
             `${p}교시`,
             abbreviateRole(roles[r - 1]?.name),
-            ...rooms.map(room => (cellMap[room] || []).join(', ')),
+            ...displayRooms.map(room => (cellMap[room] || []).join(', ')),
             Object.values(cellMap).flat().length,
           ],
         });

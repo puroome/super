@@ -54,4 +54,20 @@ const data = [[], ['', '101[1]', 0], ['', 0, 0]];
   assert.ok(!html.includes('[1]'), '고사장 칸에 [보직] 표기가 남아있으면 안 됨');
 }
 
+
+// ── 전체 감독표: 미배정/기타 고사실도 누락 없이 표시 ──
+{
+  const html = buildFullTableHTML({
+    data: [[], ['', '미배정[1]'], ['', '[2]'], ['', '999[1]']],
+    slots: [{ dayIdx: 1, period: 1 }],
+    teachers: [{ name: 'A' }, { name: 'B' }, { name: 'C' }],
+    rooms: ['101'],
+    roles,
+    examDays: [{ date: '2026-04-27', startPeriod: 1, endPeriod: 1 }],
+  });
+  assert.ok(html.includes('미배정'), '미배정 고사실 열이 표시되어야 함');
+  assert.ok(html.includes('999'), '기본 고사실 목록에 없는 배정 고사실도 표시되어야 함');
+  assert.ok(html.includes('>A<') && html.includes('>B<') && html.includes('>C<'), '미배정/기타 고사실 교사명이 빠지면 안 됨');
+}
+
 console.log('OK: print.js 날짜열제거/제목/헤더검정/짝수날배경/괄호제거/h-text 정상 동작');
