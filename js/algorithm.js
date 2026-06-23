@@ -279,27 +279,30 @@ function findMax(rowP, colP, tCount, sCount) {
 }
 
 function insertOneInRow(data, fixedMap, rowIdx, colP, sCount) {
-  let bestP = -Infinity, bestJ = -1;
+  // ponytail: 동점 후보 셔플로 매 실행마다 다른 결과 보장
+  const candidates = [];
   for (let j = 1; j <= sCount; j++) {
-    if ((data[rowIdx][j] === '' || data[rowIdx][j] === 0) && !fixedMap[rowIdx][j]) {
-      if (colP[j] > bestP) { bestP = colP[j]; bestJ = j; }
-    }
+    if ((data[rowIdx][j] === '' || data[rowIdx][j] === 0) && !fixedMap[rowIdx][j] && colP[j] > 0)
+      candidates.push(j);
   }
-  if (bestJ > 0 && bestP > 0) { data[rowIdx][bestJ] = 1; return true; }
-  return false;
+  if (!candidates.length) return false;
+  const j = shuffle(candidates)[0];
+  data[rowIdx][j] = 1;
+  return true;
 }
 
 function insertOneInCol(data, fixedMap, colIdx, rowP, tCount) {
-  let bestP = -Infinity, bestI = -1;
+  // ponytail: 동점 후보 셔플로 매 실행마다 다른 결과 보장
+  const candidates = [];
   for (let i = 1; i <= tCount; i++) {
-    if ((data[i][colIdx] === '' || data[i][colIdx] === 0) && !fixedMap[i][colIdx]) {
-      if (rowP[i] > bestP) { bestP = rowP[i]; bestI = i; }
-    }
+    if ((data[i][colIdx] === '' || data[i][colIdx] === 0) && !fixedMap[i][colIdx] && rowP[i] > 0)
+      candidates.push(i);
   }
-  if (bestI > 0 && bestP > 0) { data[bestI][colIdx] = 1; return true; }
-  return false;
+  if (!candidates.length) return false;
+  const i = shuffle(candidates)[0];
+  data[i][colIdx] = 1;
+  return true;
 }
-
 function fillEmptySlots(data, fixedMap, rowP, colP, tCount, sCount) {
   for (let i = 1; i <= tCount; i++) {
     if (rowP[i] <= 0) continue;
