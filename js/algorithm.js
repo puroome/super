@@ -883,8 +883,8 @@ function assignAll(input) {
     for (const jStr of Object.keys(fixedCells[iStr] || {})) {
       const j = parseInt(jStr);
       fixedMap[i][j] = true;
-      // ponytail: true 대신 실제 배정값 저장으로 고사실까지 고정
-      data[i][j] = fixedCells[iStr][jStr] === true ? 1 : fixedCells[iStr][jStr];
+      // ponytail: 고사실 포함 값이면 배정 단계에선 1로만 세팅, assignRooms 후 복원
+      data[i][j] = 1;
     }
   }
 
@@ -900,7 +900,9 @@ function assignAll(input) {
     for (const { slotIdx: j, roleIdx: r } of required) {
       if (j >= 1 && j <= sCount) {
         fixedMap[i][j] = true;
-        data[i][j] = r > 0 ? `[${r}]` : 1;
+        // ponytail: fixedCells(더블클릭)가 이미 고사실 포함 값을 갖고 있으면 덮어쓰지 않음
+        const cv = fixedCells[i]?.[j];
+        if (!cv || cv === true) data[i][j] = r > 0 ? `[${r}]` : 1;
       }
     }
   }
@@ -910,6 +912,18 @@ function assignAll(input) {
   disperseConsecutive(data, fixedMap, slots, tCount, sCount);
   assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, tCount, sCount);
   const roomShortages = assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomRequirements, tCount, sCount);
+
+  // ponytail: 더블클릭으로 고사실까지 고정한 셀 복원 — assignRooms가 덮어쓴 뒤에 원래 값으로 되돌림
+  for (const iStr of Object.keys(fixedCells)) {
+    const i = parseInt(iStr);
+    for (const jStr of Object.keys(fixedCells[iStr] || {})) {
+      const j = parseInt(jStr);
+      const cv = fixedCells[iStr][jStr];
+      if (cv && cv !== true && extractRoom(String(cv)) && !String(cv).startsWith('[')) {
+        data[i][j] = cv;
+      }
+    }
+  }
   fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount);
   const workload = disperseWorkload(data, fixedMap, slots, teachers, roles, tCount, sCount);
   const roleCounts = calcRoleCounts(data, slots, teachers, roles, tCount, sCount);
