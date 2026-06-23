@@ -100,9 +100,9 @@ function removeDayFromRequirements(roomRequirements, removedDayIdx) {
 // 자동배정 결과 그리드의 셀 1칸을 어떻게 표시할지 결정.
 // 우선순위: 고정시간으로 배정된 영역(파랑) > 제외시간 x(빨강) > 기본(흰색)
 // 보직별 색 구분은 안 함(인쇄 출력에서 확인) — [역할번호] 표기도 화면에는 안 보여줌(불필요한 정보).
-function gridCellDisplay(cell, isFixed) {
+function gridCellDisplay(cell, isFixed, isManualFixed) {
   cell = String(cell ?? '');
-  const bg = isFixed ? '#cfe3fa' : cell === 'x' ? '#fbdada' : '#fff';
+  const bg = isManualFixed ? '#c8c8c8' : isFixed ? '#cfe3fa' : cell === 'x' ? '#fbdada' : '#fff';
   if (cell === '0' || cell === '') return { bg, text: '' };
   if (cell === 'x') return { bg, text: 'X' };
   const roleIdx = extractRole(cell);
@@ -881,7 +881,8 @@ function assignAll(input) {
     for (const jStr of Object.keys(fixedCells[iStr] || {})) {
       const j = parseInt(jStr);
       fixedMap[i][j] = true;
-      data[i][j] = 1;
+      // ponytail: true 대신 실제 배정값 저장으로 고사실까지 고정
+      data[i][j] = fixedCells[iStr][jStr] === true ? 1 : fixedCells[iStr][jStr];
     }
   }
 
