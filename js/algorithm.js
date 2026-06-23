@@ -345,7 +345,8 @@ function assignAll(input) {
 
       for (const i of candidates) {
         if (remaining <= 0) break;
-        data[i][j] = 1;
+        // ponytail: 보직까지 바로 확정 → assignRoles 이중계산 방지
+        data[i][j] = `[${r}]`;
         workload[i] += roles[r - 1]?.workload ?? 0;
         remaining--;
       }
@@ -400,6 +401,7 @@ function assignAll(input) {
 }
 
 // ─── 보직배정 ────────────────────────────────────────────────────────────────
+// ponytail: 4단계에서 일반 배정은 [r] 직접 확정했으므로 여기선 고정셀(data===1)만 처리
 
 function assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, workload, tCount, sCount) {
   const roleCount = roles.length;
@@ -412,15 +414,13 @@ function assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, workl
       remain[r] = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
     }
 
-    // 0단계: 이미 보직이 확정된 셀 차감
+    // 이미 보직 확정된 셀 차감
     for (let i = 1; i <= tCount; i++) {
       const preRole = extractRole(String(data[i][j]));
-      if (preRole > 0) {
-        if (remain[preRole] > 0) remain[preRole]--;
-      }
+      if (preRole > 0 && remain[preRole] > 0) remain[preRole]--;
     }
 
-    // 1단계: 고정셀(보직 미정, data===1) 먼저 배정
+    // 고정셀 중 보직 미정(data===1)만 배정 — 강도 낮은 보직 순
     for (let i = 1; i <= tCount; i++) {
       if (!fixedMap[i][j] || data[i][j] !== 1) continue;
       for (let r = 1; r <= roleCount; r++) {
@@ -430,22 +430,6 @@ function assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, workl
           remain[r]--;
           break;
         }
-      }
-    }
-
-    // 2단계: 일반 배정 — 업무강도 낮은 순
-    for (let r = 1; r <= roleCount; r++) {
-      if (remain[r] <= 0) continue;
-      const candidates = [];
-      for (let i = 1; i <= tCount; i++) {
-        if (data[i][j] === 1 && !fixedMap[i][j]) candidates.push({ i, w: workload[i] });
-      }
-      candidates.sort((a, b) => a.w - b.w);
-      for (const { i } of candidates) {
-        if (remain[r] <= 0) break;
-        data[i][j] = `[${r}]`;
-        workload[i] += roles[r - 1].workload ?? 0;
-        remain[r]--;
       }
     }
   }
