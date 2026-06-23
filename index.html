@@ -121,15 +121,17 @@
     <!-- 고사실 -->
     <div class="card">
       <h2>🏫 고사실 목록</h2>
-      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-        <input id="room-input" placeholder="고사실명 (예: 101)" style="flex:1;min-width:80px">
-        <button class="btn-primary" onclick="addRoom()">추가</button>
+      <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
         <label class="btn-outline" style="padding:5px 12px;cursor:pointer">
           📂 CSV 업로드
           <input type="file" accept=".csv" onchange="handleRoomCSV(event)" style="display:none">
         </label>
         <button class="btn-outline" onclick="downloadRoomCSVTemplate()">⬇ CSV양식 받기</button>
         <button class="btn-danger btn-sm" onclick="resetSection('rooms')">🗑 초기화</button>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <input id="room-input" placeholder="고사실명 (예: 101)" style="flex:1;min-width:80px">
+        <button class="btn-primary" onclick="addRoom()">추가</button>
       </div>
       <div id="room-list" style="margin-top:8px"></div>
     </div>
