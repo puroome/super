@@ -334,8 +334,12 @@ function renderAssignGrid() {
 
   html += `</tbody></table></div>`;
   document.getElementById('assign-grid-wrap').innerHTML = html;
-
   document.getElementById('btn-swap').disabled = state.selectedCells.length !== 2;
+
+  const histEl = document.getElementById('swap-history');
+  if (histEl) histEl.innerHTML = (state.swapHistory ?? [])
+    .map((h, i) => `<span class="tag">${h.label} <button onclick="undoSwap(${i})">×</button></span>`)
+    .join('');
 }
 
 function onCellClick(i, j) {
@@ -363,14 +367,30 @@ function doSwap() {
   if (state.selectedCells.length !== 2) return;
   const [c1, c2] = state.selectedCells;
   if (swapCells(state.data, state.fixedCells, c1.i, c1.j, c2.i, c2.j)) {
-    const rc = calcRoleCounts(state.data, state.slots, state.teachers, state.roles,
+    state.roleCounts = calcRoleCounts(state.data, state.slots, state.teachers, state.roles,
       state.teachers.length, state.slots.length);
-    state.roleCounts = rc;
+    // ponytail: 교환 내역 저장 — 취소는 단순 재교환. 연쇄 교환 후 중간 취소시 꼬일 수 있으나 실사용 범위 내에서 충분.
+    if (!state.swapHistory) state.swapHistory = [];
+    const getName = (c) => state.teachers[c.i - 1]?.name ?? c.i;
+    const getSlot = (c) => state.slots[c.j - 1] ? `${state.slots[c.j - 1].dayIdx}일${state.slots[c.j - 1].period}교시` : c.j;
+    state.swapHistory.push({ c1, c2, label: `${getName(c1)} ${getSlot(c1)} ↔ ${getName(c2)} ${getSlot(c2)}` });
     state.selectedCells = [];
     renderAssignGrid();
     toast('교환 완료');
+  } else {
+    toast('고정된 셀은 교환할 수 없습니다');
   }
 }
+
+window.undoSwap = (idx) => {
+  const h = state.swapHistory?.[idx];
+  if (!h) return;
+  swapCells(state.data, state.fixedCells, h.c1.i, h.c1.j, h.c2.i, h.c2.j);
+  state.roleCounts = calcRoleCounts(state.data, state.slots, state.teachers, state.roles,
+    state.teachers.length, state.slots.length);
+  state.swapHistory.splice(idx, 1);
+  renderAssignGrid();
+};
 
 // 표 입력 → 표준형으로 정규화 후 저장 + 화면에 즉시 반영(블러 시 칸이 표준형으로 정리됨)
 function updateTeacherField(idx, key, inputEl) {
