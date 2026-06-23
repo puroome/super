@@ -3,7 +3,7 @@
 import {
   assignAll, swapCells, validateAssignment,
   buildSlots, extractRole, extractRoom, calcRoleCounts,
-  parseRequirementsCSV, distributeQuota,
+  parseRequirementsCSV,
   buildSaveSnapshot, applySnapshotToState, emptyState,
   csvField, gridCellDisplay, normalizeSlotStr,
   parseUnavailableSlots, parseRequiredSlots,
@@ -36,6 +36,7 @@ const state = {
   roleCounts: [],
   slots: [],
   selectedCells: [],
+  swapHistory: [],
 };
 
 // ─── 탭 전환 ─────────────────────────────────────────────────────────────────
@@ -54,11 +55,6 @@ function initTabs() {
 }
 
 // ─── 입력 형식 정규화 ─────────────────────────────────────────────────────────
-// ponytail: 입력 구분자(쉼표/세미콜론, 하이픈/언더스코어)는 관용적으로 받아주되,
-//   저장·표시는 항상 표준형으로 통일한다.
-//   - 시간: "일차_교시" (예: 1_3, 2_1) — 하이픈(-)을 쓰면 엑셀이 날짜로 오인하므로 언더스코어 사용
-//   - 항목 구분: ", " (쉼표+공백)
-//   normalizeSlotStr 자체는 algorithm.js에 있음 (DOM 의존성 없는 순수함수라 테스트 가능)
 
 function normalizeRoleStr(str) {
   if (str == null || !String(str).trim()) return '';
@@ -94,7 +90,6 @@ function renderTeacherList() {
   el.innerHTML = state.teachers.map((t, i) => `
     <tr>
       <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
-      <td title="배정시간 자동채우기 버튼으로만 설정 가능">${t.quota ?? 0}</td>
       <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
       <td><input value="${t.forbiddenRooms ?? ''}" title="제외 고사실 (예: 101, 102)" onchange="updateTeacherField(${i},'forbiddenRooms',this)" style="width:90px"></td>
       <td><input value="${t.unavailableSlots ?? ''}" title="제외 시간: 일차_교시 (예: 1_1, 2_3)" onchange="updateTeacherField(${i},'unavailableSlots',this)" style="width:90px"></td>
@@ -103,37 +98,6 @@ function renderTeacherList() {
       <td><button onclick="removeTeacher(${i})">삭제</button></td>
     </tr>
   `).join('');
-}
-
-function autoFillQuota() {
-  const slots = buildSlots(state.examDays);
-  if (!slots.length || !state.teachers.length) { toast('시험 날짜와 교사를 먼저 입력하세요.'); return 0; }
-
-  const slotNeeds = {};
-  state.requirements.forEach(r => {
-    const j = slots.findIndex(s => s.dayIdx === r.dayIdx && s.period === r.period) + 1;
-    if (j > 0) slotNeeds[j] = (slotNeeds[j] ?? 0) + r.count;
-  });
-  const totalNeed = Object.values(slotNeeds).reduce((s, v) => s + v, 0);
-
-  if (totalNeed === 0) { toast('배정설정 탭에서 필요인원을 먼저 입력하세요.'); return 0; }
-
-  const n = state.teachers.length;
-  const sCount = slots.length;
-  const maxPossible = state.teachers.map(t =>
-    sCount - parseUnavailableSlots(t.unavailableSlots || '', slots).length
-  );
-
-  const { quota, total } = distributeQuota(totalNeed, maxPossible);
-  state.teachers.forEach((t, idx) => { t.quota = quota[idx]; });
-  renderTeacherList();
-
-  if (total < totalNeed) {
-    toast(`⚠️ 최대 가능 시간 초과로 ${totalNeed - total}시간을 배정하지 못했습니다.`, 4000);
-  } else {
-    toast(`총 ${totalNeed}시간 → 교사 ${n}명에게 자동 배분 완료`);
-  }
-  return total;
 }
 
 function renderRoomList() {
@@ -218,7 +182,6 @@ function updateRoomReq(dayIdx, period, roleIdx, roomName, count) {
   } else if (count > 0) {
     state.roomRequirements.push({ dayIdx, period, roleIdx, roomName, count });
   }
-
   syncRequirements();
 }
 
@@ -226,10 +189,6 @@ function syncRequirements() {
   state.requirements = aggregateRoomRequirements(state.roomRequirements);
 }
 
-// ponytail: 고사실 이름이 바뀌거나 삭제되면, 배정설정(roomRequirements)에 남아있는
-//   "더이상 없는 고사실명" 항목은 화면(배정설정 탭)에는 안 보이지만 자동배정 알고리즘은
-//   그 항목을 그대로 읽어서 옛 고사실명을 계속 써버린다(고아 데이터). 고사실 목록이 바뀔 때마다
-//   이 함수로 정리해야 자동배정 결과에 옛 고사실명이 남는 문제를 막을 수 있다.
 function pruneStaleRoomRequirements() {
   const before = state.roomRequirements.length;
   state.roomRequirements = pruneRoomRequirements(state.roomRequirements, state.rooms);
@@ -264,7 +223,6 @@ function importRequirementsCSV(text) {
     alert('⚠️ CSV 파일에 오류가 있습니다. 수정 후 다시 업로드해주세요.\n\n' + errors.join('\n'));
     return;
   }
-  // ponytail: 기존 배정설정 완전히 교체 — 덮어쓰기(merge) 아님
   state.roomRequirements = roomRequirements;
   syncRequirements();
   renderRequirementsTab();
@@ -287,27 +245,24 @@ function renderAssignGrid() {
   let html = `<div class="grid-scroll"><table class="assign-grid">
   <thead>
     <tr>
-      <th>순번</th><th>이름</th><th>배정시간</th><th>제외 고사실</th>
+      <th>순번</th><th>이름</th><th>제외 고사실</th>
       ${slots.map((s, idx) => {
         const day = state.examDays[s.dayIdx - 1];
         return `<th class="slot-header">${formatDate(day?.date)}<br>${s.period}교시</th>`;
       }).join('')}
-      <th>총감독</th><th>업무강도</th>
+      <th>총감독</th><th>누적강도</th>
       ${state.roles.map(r => `<th>${r.name}</th>`).join('')}
     </tr>
   </thead><tbody>`;
 
   for (let i = 1; i <= tCount; i++) {
     const t = state.teachers[i - 1];
-    // ponytail: "고정"은 두 경로로 생긴다 — ①더블클릭 수동잠금(fixedCells) ②교사의 고정시간 설정(requiredSlotStr).
-    //   배정 고사실은 바뀌어도 ②는 항상 고정이어야 하므로 매 렌더마다 다시 계산.
     const requiredSlotIdxs = new Set(
       parseRequiredSlots(t.requiredSlotStr || '', t.requiredRoleStr || '', slots).map(r => r.slotIdx)
     );
     html += `<tr>
       <td>${i}</td>
       <td>${t.name}</td>
-      <td>${t.quota ?? 0}</td>
       <td>${t.forbiddenRooms || '-'}</td>
       ${slots.map((s, idx) => {
         const j = idx + 1;
@@ -344,7 +299,6 @@ function renderAssignGrid() {
 
 function onCellClick(i, j) {
   const cell = String(state.data[i]?.[j] ?? '');
-  // ponytail: fixedCells(수동고정) + requiredSlotIdxs(기본정보고정) 둘 다 막아야 함
   const isManualFixed = !!state.fixedCells[i]?.[j];
   const t = state.teachers[i - 1];
   const isRequiredFixed = t ? parseRequiredSlots(t.requiredSlotStr || '', t.requiredRoleStr || '', state.slots).some(r => r.slotIdx === j) : false;
@@ -379,7 +333,6 @@ function doSwap() {
   if (swapCells(state.data, state.fixedCells, c1.i, c1.j, c2.i, c2.j)) {
     state.roleCounts = calcRoleCounts(state.data, state.slots, state.teachers, state.roles,
       state.teachers.length, state.slots.length);
-    // ponytail: 교환 내역 저장 — 취소는 단순 재교환. 연쇄 교환 후 중간 취소시 꼬일 수 있으나 실사용 범위 내에서 충분.
     if (!state.swapHistory) state.swapHistory = [];
     const getName = (c) => state.teachers[c.i - 1]?.name ?? c.i;
     const getSlot = (c) => state.slots[c.j - 1] ? `${state.slots[c.j - 1].dayIdx}일${state.slots[c.j - 1].period}교시` : c.j;
@@ -402,7 +355,6 @@ window.undoSwap = (idx) => {
   renderAssignGrid();
 };
 
-// 표 입력 → 표준형으로 정규화 후 저장 + 화면에 즉시 반영(블러 시 칸이 표준형으로 정리됨)
 function updateTeacherField(idx, key, inputEl) {
   let v = inputEl.value;
   if (key === 'unavailableSlots' || key === 'requiredSlotStr') v = normalizeSlotStr(v);
@@ -445,17 +397,10 @@ async function runAssign() {
   btn.textContent = '배정 중...';
 
   try {
-    if (state.teachers.every(t => !t.quota)) autoFillQuota();
+    const { ok, errors } = validateAssignment(state.slots, state.requirements);
+    if (!ok) { alert(errors.join('\n')); return; }
 
     const slots = buildSlots(state.examDays);
-    const slotNeeds = {};
-    state.requirements.forEach(r => {
-      const j = slots.findIndex(s => s.dayIdx === r.dayIdx && s.period === r.period) + 1;
-      if (j > 0) slotNeeds[j] = (slotNeeds[j] ?? 0) + r.count;
-    });
-
-    const { ok, errors } = validateAssignment(state.teachers, slots, slotNeeds);
-    if (!ok) { alert(errors.join('\n')); return; }
 
     const result = assignAll({
       teachers: state.teachers.map(t => ({
@@ -474,6 +419,7 @@ async function runAssign() {
     state.slots = result.slots;
     state.workload = result.workload;
     state.roleCounts = result.roleCounts;
+    state.swapHistory = [];
 
     if (result.roomShortages.length > 0) {
       toast(`⚠️ 고사실 칸보다 배정인원이 많아 ${result.roomShortages.length}자리 미배정 — 배정설정의 보직별 합계를 확인하세요`, 6000);
@@ -510,7 +456,6 @@ async function loadAll() {
       loadBasic(), loadRequirements(), loadAssignment(),
     ]);
 
-    // ponytail: 옛 데이터(세미콜론·_표기)도 불러올 때 표준형으로 정규화
     state.teachers = (basic.teachers ?? []).map(normalizeTeacherStrings);
     state.rooms = basic.rooms ?? [];
     state.roles = basic.roles ?? [];
@@ -569,6 +514,7 @@ async function resetAll() {
   if (!confirm('입력된 모든 데이터를 지웁니다. 저장하지 않은 내용은 사라집니다. 계속할까요?')) return;
   Object.assign(state, emptyState());
   state.selectedCells = [];
+  state.swapHistory = [];
   rerenderAll();
   try {
     await clearCurrentDocs();
@@ -646,9 +592,9 @@ async function loadNamedAndApply(id) {
     const snapshot = await loadNamed(id);
     if (!snapshot) { toast('데이터를 찾을 수 없습니다.'); return; }
     Object.assign(state, applySnapshotToState(snapshot));
-    // ponytail: 이름저장 데이터도 불러올 때 표준형으로 정규화
     state.teachers = state.teachers.map(normalizeTeacherStrings);
     state.selectedCells = [];
+    state.swapHistory = [];
     rerenderAll();
     closeLoadModal();
     toast('✅ 불러오기 완료');
@@ -673,15 +619,12 @@ async function deleteNamedConfirm(id) {
 
 // ─── CSV 가져오기 ─────────────────────────────────────────────────────────────
 
-// 배정설정 탭 보직열 축약 표시 (정감독→정, 부감독→부)
 function abbreviateRoleForUI(name) {
   if (name === '정감독') return '정';
   if (name === '부감독') return '부';
   return name;
 }
 
-// 개별 섹션 초기화
-// ponytail: 'requirements'는 roomRequirements와 requirements 둘 다 비워야 배정설정이 완전히 사라짐
 function resetSection(section) {
   const labels = {
     examDays: '시험 날짜 및 교시',
@@ -691,25 +634,16 @@ function resetSection(section) {
     requirements: '배정설정',
   };
   const impactedCount = (section === 'examDays' || section === 'roles') ? state.roomRequirements.length : 0;
-  const warn = impactedCount
-    ? `\n⚠️ 배정설정 데이터 ${impactedCount}건도 함께 삭제됩니다.`
-    : '';
+  const warn = impactedCount ? `\n⚠️ 배정설정 데이터 ${impactedCount}건도 함께 삭제됩니다.` : '';
   if (!confirm(`"${labels[section] ?? section}" 데이터를 초기화합니다.${warn}\n계속할까요?`)) return;
   if (section === 'examDays') { state.examDays = []; state.roomRequirements = []; syncRequirements(); renderExamDayList(); renderRequirementsTab(); }
   else if (section === 'teachers') { state.teachers = []; renderTeacherList(); }
   else if (section === 'rooms') { state.rooms = []; pruneStaleRoomRequirements(); renderRoomList(); renderRequirementsTab(); }
   else if (section === 'roles') { state.roles = []; state.roomRequirements = []; syncRequirements(); renderRoleList(); renderRequirementsTab(); }
-  else if (section === 'requirements') {
-    state.requirements = [];
-    state.roomRequirements = [];
-    renderRequirementsTab();
-  }
+  else if (section === 'requirements') { state.requirements = []; state.roomRequirements = []; renderRequirementsTab(); }
   toast(`${labels[section] ?? section} 초기화 완료`);
 }
 
-// RFC4180 한 줄 파싱: 큰따옴표로 감싼 필드 안의 쉼표를 보존
-// ponytail: 엑셀은 칸에 "1_3, 2_1"처럼 쉼표가 있으면 자동으로 따옴표로 감싸서 저장한다.
-//   그래서 칸 안에서도 쉼표(", ")로 통일할 수 있다. 옛 세미콜론 파일도 그대로 읽힌다.
 function parseCSVLine(line) {
   const out = [];
   let cur = '', inQ = false;
@@ -731,7 +665,6 @@ function parseCSVLine(line) {
 }
 
 function importTeacherCSV(text) {
-  // ponytail: 기존 목록을 완전히 교체 — 덮어쓰기(merge) 아님
   const lines = text.trim().split('\n');
   const dataLines = lines.slice(1).filter(l => l.trim());
   const errors = [];
@@ -740,7 +673,6 @@ function importTeacherCSV(text) {
     const parts = parseCSVLine(line);
     const [name, prevWorkload, forbiddenRooms, unavailableSlots, requiredSlotStr, requiredRoleStr] = parts;
 
-    // 표준형으로 정규화 (시간 일차_교시, 항목 ", ")
     const normRooms = normalizeRoomStr(forbiddenRooms || '');
     const normUnavail = normalizeSlotStr(unavailableSlots || '');
     const normReqSlot = normalizeSlotStr(requiredSlotStr || '');
@@ -750,26 +682,18 @@ function importTeacherCSV(text) {
       const slotsArr = normReqSlot ? normReqSlot.split(',').map(s => s.trim()).filter(Boolean) : [];
       const rolesArr = normReqRole ? normReqRole.split(',').map(s => s.trim()).filter(Boolean) : [];
       if (slotsArr.length !== rolesArr.length) {
-        errors.push(
-          `${rowIdx + 2}행 (${name || '?'}): ` +
-          `고정시간 ${slotsArr.length}개 ≠ 감독유형 ${rolesArr.length}개 — 개수가 일치해야 합니다.`
-        );
+        errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 ${slotsArr.length}개 ≠ 감독유형 ${rolesArr.length}개 — 개수가 일치해야 합니다.`);
       }
       slotsArr.forEach(s => {
-        if (!/^\d+_\d+$/.test(s)) {
-          errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 "${s}"의 형식이 올바르지 않습니다. (올바른 형식: 일차_교시, 예: 1_3)`);
-        }
+        if (!/^\d+_\d+$/.test(s)) errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 "${s}"의 형식이 올바르지 않습니다.`);
       });
       rolesArr.forEach(r => {
-        if (r !== '1' && r !== '2') {
-          errors.push(`${rowIdx + 2}행 (${name || '?'}): 감독유형 "${r}"은 1(정감독) 또는 2(부감독)만 입력 가능합니다.`);
-        }
+        if (r !== '1' && r !== '2') errors.push(`${rowIdx + 2}행 (${name || '?'}): 감독유형 "${r}"은 1(정감독) 또는 2(부감독)만 입력 가능합니다.`);
       });
     }
 
     return {
       name: name || '',
-      quota: 0,
       prevWorkload: parseFloat(prevWorkload) || 0,
       forbiddenRooms: normRooms,
       unavailableSlots: normUnavail,
@@ -779,10 +703,7 @@ function importTeacherCSV(text) {
   });
 
   if (errors.length > 0) {
-    alert(
-      '⚠️ CSV 파일에 오류가 있습니다. 수정 후 다시 업로드해주세요.\n\n' +
-      errors.join('\n')
-    );
+    alert('⚠️ CSV 파일에 오류가 있습니다. 수정 후 다시 업로드해주세요.\n\n' + errors.join('\n'));
     return;
   }
 
@@ -792,7 +713,6 @@ function importTeacherCSV(text) {
 }
 
 function importRoomCSV(text) {
-  // ponytail: 기존 목록을 완전히 교체 — 덮어쓰기(merge) 아님
   const lines = text.trim().split('\n').slice(1);
   const newRooms = lines.map(l => l.trim()).filter(Boolean);
   const kept = pruneRoomRequirements(state.roomRequirements, newRooms);
@@ -821,7 +741,6 @@ function downloadRoomCSVTemplate() {
 }
 
 function downloadCSV(content, filename) {
-  // ponytail: BOM 추가로 Excel 한글 깨짐 방지
   const bom = '\uFEFF';
   const blob = new Blob([bom + content], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
@@ -841,9 +760,6 @@ window.updateRoomReq = updateRoomReq;
 window.onCellClick = onCellClick;
 window.onCellDblClick = onCellDblClick;
 
-// ponytail: 고사실/보직/날짜는 "전순위"(기본정보) 설정이고, 배정설정(roomRequirements)은
-//   거기 의존하는 "후순위" 데이터다. 전순위를 삭제하기 전에, 영향받는 후순위 데이터가
-//   있으면 경고하고 확인을 받는다 — 확인을 안 하면 삭제 자체를 취소해서 바로 적용되지 않게 한다.
 function confirmStaleImpact(affectedCount, what) {
   if (!affectedCount) return true;
   return confirm(
@@ -886,7 +802,7 @@ window.removeExamDay = (idx) => {
 };
 
 window.addTeacher = () => {
-  state.teachers.push({ name: '', quota: 0, prevWorkload: 0, forbiddenRooms: '', unavailableSlots: '', requiredSlotStr: '', requiredRoleStr: '' });
+  state.teachers.push({ name: '', prevWorkload: 0, forbiddenRooms: '', unavailableSlots: '', requiredSlotStr: '', requiredRoleStr: '' });
   renderTeacherList();
 };
 window.addRoom = () => {
@@ -912,42 +828,6 @@ window.loadNamedAndApply = loadNamedAndApply;
 window.deleteNamedConfirm = deleteNamedConfirm;
 window.runAssign = runAssign;
 window.doSwap = doSwap;
-window.openPrevWorkloadPicker = async (thEl) => {
-  document.getElementById('prev-workload-picker')?.remove();
-  const saves = await listSaves();
-  if (!saves.length) { toast('저장된 자료가 없습니다'); return; }
-  const picker = document.createElement('div');
-  picker.id = 'prev-workload-picker';
-  picker.style.cssText = 'position:absolute;background:#fff;border:1px solid #d0d7e3;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:999;min-width:180px;padding:4px 0';
-  saves.forEach(s => {
-    const item = document.createElement('div');
-    item.textContent = s.name;
-    item.style.cssText = 'padding:8px 14px;cursor:pointer;font-size:13px';
-    item.onmouseenter = () => item.style.background = '#f0f4fa';
-    item.onmouseleave = () => item.style.background = '';
-    item.onclick = async () => {
-      picker.remove();
-      const snapshot = await loadNamed(s.id);
-      if (!snapshot) { toast('불러오기 실패'); return; }
-      const prevTeachers = snapshot.teachers ?? [];
-      const workload = snapshot.assignment?.workload;
-      state.teachers.forEach(t => {
-        const prevIdx = prevTeachers.findIndex(p => p.name === t.name);
-        // ponytail: workload는 1-based 배열, prevIdx는 0-based라 +1
-        t.prevWorkload = (workload && prevIdx >= 0) ? (workload[prevIdx + 1] ?? 0) : 0;
-      });
-      renderTeacherList();
-      toast('이전누적강도 적용 완료');
-    };
-    picker.appendChild(item);
-  });
-  const rect = thEl.getBoundingClientRect();
-  picker.style.top = (rect.bottom + window.scrollY) + 'px';
-  picker.style.left = rect.left + 'px';
-  document.body.appendChild(picker);
-  setTimeout(() => document.addEventListener('click', () => picker.remove(), { once: true }), 0);
-};
-window.autoFillQuota = autoFillQuota;
 window.downloadTeacherCSVTemplate = downloadTeacherCSVTemplate;
 window.downloadRoomCSVTemplate = downloadRoomCSVTemplate;
 window.downloadRequirementsCSVTemplate = downloadRequirementsCSVTemplate;
@@ -986,6 +866,44 @@ window.handleRequirementsCSV = (e) => {
   const file = e.target.files[0];
   if (!file) return;
   file.text().then(importRequirementsCSV);
+};
+
+window.openPrevWorkloadPicker = async (thEl) => {
+  document.getElementById('prev-workload-picker')?.remove();
+  const saves = await listSaves();
+  if (!saves.length) { toast('저장된 자료가 없습니다'); return; }
+
+  const picker = document.createElement('div');
+  picker.id = 'prev-workload-picker';
+  picker.style.cssText = 'position:absolute;background:#fff;border:1px solid #d0d7e3;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.12);z-index:999;min-width:180px;padding:4px 0';
+  saves.forEach(s => {
+    const item = document.createElement('div');
+    item.textContent = s.name;
+    item.style.cssText = 'padding:8px 14px;cursor:pointer;font-size:13px';
+    item.onmouseenter = () => item.style.background = '#f0f4fa';
+    item.onmouseleave = () => item.style.background = '';
+    item.onclick = async () => {
+      picker.remove();
+      const snapshot = await loadNamed(s.id);
+      if (!snapshot) { toast('불러오기 실패'); return; }
+      const prevTeachers = snapshot.teachers ?? [];
+      const workload = snapshot.assignment?.workload;
+      state.teachers.forEach(t => {
+        const prevIdx = prevTeachers.findIndex(p => p.name === t.name);
+        // ponytail: workload는 1-based 배열, prevIdx는 0-based라 +1
+        t.prevWorkload = (workload && prevIdx >= 0) ? (workload[prevIdx + 1] ?? 0) : 0;
+      });
+      renderTeacherList();
+      toast('이전누적강도 적용 완료');
+    };
+    picker.appendChild(item);
+  });
+
+  const rect = thEl.getBoundingClientRect();
+  picker.style.top = (rect.bottom + window.scrollY) + 'px';
+  picker.style.left = rect.left + 'px';
+  document.body.appendChild(picker);
+  setTimeout(() => document.addEventListener('click', () => picker.remove(), { once: true }), 0);
 };
 
 // ─── 유틸 ────────────────────────────────────────────────────────────────────

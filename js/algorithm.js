@@ -1,6 +1,4 @@
-// algorithm.js — 시험감독 자동배정 알고리즘 (VBA → JS)
-
-const FIXED_COLOR = 'fixed';
+// algorithm.js — 시험감독 자동배정 알고리즘
 
 // ─── 유틸 ────────────────────────────────────────────────────────────────────
 
@@ -17,25 +15,21 @@ function isInArray(arr, val) {
   return Array.isArray(arr) && arr.includes(val);
 }
 
-// ponytail: 입력 구분자(쉼표/세미콜론, 하이픈/언더스코어)는 관용적으로 받되 표준 출력은
-//   "일차_교시" 언더스코어로 통일한다. 하이픈(-)을 쓰면 엑셀이 CSV를 열 때 날짜로 오인해버린다.
 function normalizeSlotStr(str) {
   if (str == null || !String(str).trim()) return '';
   return String(str).split(/[,;]/).map(s => s.trim()).filter(Boolean)
     .map(tok => {
       const m = tok.match(/^(\d+)[-_](\d+)$/);
-      return m ? `${m[1]}_${m[2]}` : tok; // 형식이 어긋난 토큰은 그대로 둬서 사용자가 보고 고치게 함
+      return m ? `${m[1]}_${m[2]}` : tok;
     })
     .join(', ');
 }
 
-// ponytail: RFC4180 — 쉼표/따옴표가 있는 값만 따옴표로 감싸기 (parseCSVLine과 짝)
 function csvField(v) {
   v = String(v ?? '');
   return /[,"]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
 }
 
-// ponytail: 구분자(,/;)·시간형식(-/_) 모두 관용적으로 받음 (옛 데이터 호환)
 function parseUnavailableSlots(str, slots) {
   if (!str || !str.trim()) return [];
   return str.split(/[,;]/).map(s => s.trim()).filter(Boolean).flatMap(token => {
@@ -63,13 +57,11 @@ function parseRequiredSlots(slotStr, roleStr, slots) {
   });
 }
 
-// 더이상 존재하지 않는 고사실명을 가진 배정감독수 설정을 제거 (고사실 목록 변경 시 고아 데이터 방지)
 function pruneRoomRequirements(roomRequirements, rooms) {
   const validRooms = new Set(rooms);
   return roomRequirements.filter(r => validRooms.has(r.roomName));
 }
 
-// roomRequirements(aggregateRoomRequirements)를 날짜/교시/보직별 합계로 집계
 function aggregateRoomRequirements(roomRequirements) {
   const map = {};
   roomRequirements.forEach(({ dayIdx, period, roleIdx, count }) => {
@@ -82,24 +74,18 @@ function aggregateRoomRequirements(roomRequirements) {
   });
 }
 
-// 보직(역할)을 삭제하면 그 뒤 보직들의 roleIdx(1-base 순번)가 한 칸씩 당겨진다.
-// 삭제된 보직 관련 항목은 버리고, 그 뒤 항목들은 roleIdx를 1씩 줄여 새 순번에 맞춘다.
 function removeRoleFromRequirements(roomRequirements, removedRoleIdx) {
   return roomRequirements
     .filter(r => r.roleIdx !== removedRoleIdx)
     .map(r => r.roleIdx > removedRoleIdx ? { ...r, roleIdx: r.roleIdx - 1 } : r);
 }
 
-// 시험 날짜를 삭제하면 그 뒤 날짜들의 dayIdx(1-base 순번)가 한 칸씩 당겨진다. 위와 동일한 보정.
 function removeDayFromRequirements(roomRequirements, removedDayIdx) {
   return roomRequirements
     .filter(r => r.dayIdx !== removedDayIdx)
     .map(r => r.dayIdx > removedDayIdx ? { ...r, dayIdx: r.dayIdx - 1 } : r);
 }
 
-// 자동배정 결과 그리드의 셀 1칸을 어떻게 표시할지 결정.
-// 우선순위: 고정시간으로 배정된 영역(파랑) > 제외시간 x(빨강) > 기본(흰색)
-// 보직별 색 구분은 안 함(인쇄 출력에서 확인) — [역할번호] 표기도 화면에는 안 보여줌(불필요한 정보).
 function gridCellDisplay(cell, isFixed, isManualFixed) {
   cell = String(cell ?? '');
   const bg = isManualFixed ? '#c8c8c8' : isFixed ? '#cfe3fa' : cell === 'x' ? '#fbdada' : '#fff';
@@ -204,258 +190,11 @@ function parseRequirementsCSV(text, examDays, roles) {
   return { roomRequirements: [...merged.values()], errors };
 }
 
-function distributeQuota(totalNeed, maxPossible) {
-  const n = maxPossible.length;
-  const quota = new Array(n).fill(0);
-  let total = 0, i = 0, noProgress = 0;
-  while (total < totalNeed && n > 0) {
-    if (quota[i] < maxPossible[i]) {
-      quota[i]++;
-      total++;
-      noProgress = 0;
-    } else {
-      noProgress++;
-      if (noProgress >= n) break;
-    }
-    i = (i + 1) % n;
-  }
-  return { quota, total };
-}
+// ─── 핵심 배정 로직: 업무강도 기반 전체 최적화 ───────────────────────────────
 
-// ─── P값 기반 배정 ────────────────────────────────────────────────────────────
-
-function calcPValues(data, fixedMap, slots, teachers, slotNeeds) {
-  const tCount = teachers.length;
-  const sCount = slots.length;
-
-  const rowP = new Array(tCount + 1).fill(-100);
-  const colP = new Array(sCount + 1).fill(-100);
-
-  for (let i = 1; i <= tCount; i++) {
-    const quota = teachers[i - 1].quota ?? 0;
-    let assigned = 0, available = 0;
-    for (let j = 1; j <= sCount; j++) {
-      const v = data[i][j];
-      if (v === 1) assigned++;
-      if (v === '' || v === 0) available++;
-    }
-    const remain = quota - assigned;
-    rowP[i] = available > 0 ? remain / available : -100;
-  }
-
-  for (let j = 1; j <= sCount; j++) {
-    const need = slotNeeds[j] ?? 0;
-    let assigned = 0, xCount = 0, possible = 0;
-    for (let i = 1; i <= tCount; i++) {
-      const v = data[i][j];
-      if (v === 1) assigned++;
-      else if (String(v).toLowerCase() === 'x') xCount++;
-      else if (v === '' || v === 0) possible++;
-    }
-    const remain = need - assigned;
-    const denom = tCount - xCount - assigned;
-    colP[j] = denom > 0 ? remain / denom : -100;
-  }
-
-  return { rowP, colP };
-}
-
-function findMax(rowP, colP, tCount, sCount) {
-  let maxVal = -Infinity, maxIdx = -1;
-
-  for (let i = 1; i <= tCount; i++) {
-    if (rowP[i] > maxVal && rowP[i] <= 1) {
-      maxVal = rowP[i];
-      maxIdx = i - 1;
-    }
-  }
-  for (let j = 1; j <= sCount; j++) {
-    if (colP[j] > maxVal && colP[j] <= 1) {
-      maxVal = colP[j];
-      maxIdx = tCount + j - 1;
-    }
-  }
-  return { maxIdx, maxVal };
-}
-
-function insertOneInRow(data, fixedMap, rowIdx, colP, sCount) {
-  // ponytail: 동점 후보 셔플로 매 실행마다 다른 결과 보장
-  const candidates = [];
-  for (let j = 1; j <= sCount; j++) {
-    if ((data[rowIdx][j] === '' || data[rowIdx][j] === 0) && !fixedMap[rowIdx][j] && colP[j] > 0)
-      candidates.push(j);
-  }
-  if (!candidates.length) return false;
-  const j = shuffle(candidates)[0];
-  data[rowIdx][j] = 1;
-  return true;
-}
-
-function insertOneInCol(data, fixedMap, colIdx, rowP, tCount) {
-  // ponytail: 동점 후보 셔플로 매 실행마다 다른 결과 보장
-  const candidates = [];
-  for (let i = 1; i <= tCount; i++) {
-    if ((data[i][colIdx] === '' || data[i][colIdx] === 0) && !fixedMap[i][colIdx] && rowP[i] > 0)
-      candidates.push(i);
-  }
-  if (!candidates.length) return false;
-  const i = shuffle(candidates)[0];
-  data[i][colIdx] = 1;
-  return true;
-}
-function fillEmptySlots(data, fixedMap, rowP, colP, tCount, sCount) {
-  for (let i = 1; i <= tCount; i++) {
-    if (rowP[i] <= 0) continue;
-    for (let j = 1; j <= sCount; j++) {
-      if (colP[j] <= 0) continue;
-      if ((data[i][j] === '' || data[i][j] === 0) && !fixedMap[i][j]) {
-        data[i][j] = 1;
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-function swapToFill(data, fixedMap, rowP, colP, tCount, sCount) {
-  for (let i = 1; i <= tCount; i++) {
-    if (rowP[i] <= 0) continue;
-    for (let j = 1; j <= sCount; j++) {
-      if (data[i][j] !== '' && data[i][j] !== 0) continue;
-      if (fixedMap[i][j]) continue;
-      for (let k = 1; k <= tCount; k++) {
-        if (k === i) continue;
-        if (data[k][j] === 1 && !fixedMap[k][j] && rowP[k] < 0) {
-          for (let l = 1; l <= sCount; l++) {
-            if (l === j) continue;
-            if ((data[i][l] === '' || data[i][l] === 0) && !fixedMap[i][l] &&
-                (data[k][l] === '' || data[k][l] === 0) && !fixedMap[k][l]) {
-              data[i][j] = 1; data[k][j] = 0;
-              data[k][l] = 1; data[i][l] = 0;
-              return true;
-            }
-          }
-        }
-      }
-    }
-  }
-  return false;
-}
-
-function fillZeros(data, tCount, sCount) {
-  for (let i = 1; i <= tCount; i++)
-    for (let j = 1; j <= sCount; j++)
-      if (data[i][j] === '' || data[i][j] === undefined) data[i][j] = 0;
-}
-
-function assignTeachers(data, fixedMap, slots, teachers, slotNeeds) {
-  const tCount = teachers.length;
-  const sCount = slots.length;
-  let failCount = 0;
-
-  while (true) {
-    const { rowP, colP } = calcPValues(data, fixedMap, slots, teachers, slotNeeds);
-    const { maxIdx, maxVal } = findMax(rowP, colP, tCount, sCount);
-
-    if (maxVal === 0 || maxVal === -100 || maxIdx === -1) { fillZeros(data, tCount, sCount); return; }
-
-    let ok = false;
-    if (maxIdx < tCount) {
-      ok = insertOneInRow(data, fixedMap, maxIdx + 1, colP, sCount);
-    } else {
-      ok = insertOneInCol(data, fixedMap, maxIdx - tCount + 1, rowP, tCount);
-    }
-
-    if (!ok) {
-      failCount++;
-      if (failCount === 1) ok = fillEmptySlots(data, fixedMap, rowP, colP, tCount, sCount);
-      if (!ok && failCount === 1) ok = swapToFill(data, fixedMap, rowP, colP, tCount, sCount);
-      if (!ok && failCount >= 2) { fillZeros(data, tCount, sCount); return; }
-      if (ok) failCount = 0;
-    } else {
-      failCount = 0;
-    }
-  }
-}
-
-// ─── ② 날짜분산 ───────────────────────────────────────────────────────────────
-
-function getTeacherDailyCount(data, fixedMap, slots, teacherIdx, tCount, sCount) {
-  const counts = {};
-  for (let j = 1; j <= sCount; j++) {
-    const d = slots[j - 1].dayIdx;
-    if (!counts[d]) counts[d] = 0;
-    if (data[teacherIdx][j] === 1) counts[d]++;
-  }
-  return counts;
-}
-
-function getTeacherDailyEmpty(data, slots, teacherIdx, sCount) {
-  const counts = {};
-  for (let j = 1; j <= sCount; j++) {
-    const d = slots[j - 1].dayIdx;
-    if (!counts[d]) counts[d] = 0;
-    if (data[teacherIdx][j] === 0) counts[d]++;
-  }
-  return counts;
-}
-
-function disperseByDate(data, fixedMap, slots, tCount, sCount) {
-  // ponytail: 최대 100회 반복으로 수렴 보장
-  for (let iter = 0; iter < 100; iter++) {
-    let changed = false;
-    for (let i = 1; i <= tCount; i++) {
-      const dailyCount = getTeacherDailyCount(data, fixedMap, slots, i, tCount, sCount);
-      const dailyEmpty = getTeacherDailyEmpty(data, slots, i, sCount);
-      const days = Object.keys(dailyCount).map(Number);
-
-      for (const highDay of days) {
-        for (const lowDay of days) {
-          if (dailyCount[highDay] - (dailyCount[lowDay] ?? 0) <= 1) continue;
-          if ((dailyEmpty[lowDay] ?? 0) === 0) continue;
-
-          for (let j1 = 1; j1 <= sCount; j1++) {
-            if (slots[j1 - 1].dayIdx !== highDay) continue;
-            if (data[i][j1] !== 1 || fixedMap[i][j1]) continue;
-
-            for (let k = 1; k <= tCount; k++) {
-              if (k === i) continue;
-              if (data[k][j1] !== 0) continue;
-              if (fixedMap[k][j1]) continue;
-
-              for (let j2 = 1; j2 <= sCount; j2++) {
-                if (slots[j2 - 1].dayIdx !== lowDay) continue;
-                if (data[i][j2] !== 0 || fixedMap[i][j2]) continue;
-                if (data[k][j2] !== 1 || fixedMap[k][j2]) continue;
-
-                data[i][j1] = 0; data[k][j1] = 1;
-                data[i][j2] = 1; data[k][j2] = 0;
-                changed = true;
-                break;
-              }
-              if (changed) break;
-            }
-            if (changed) break;
-          }
-          if (changed) break;
-        }
-        if (changed) break;
-      }
-    }
-    if (!changed) break;
-  }
-}
-
-// ─── ③ 연속감독 분산 ──────────────────────────────────────────────────────────
-
-function maxConsecutive(data, teacherIdx, daySlots) {
-  let max = 0, cur = 0;
-  for (const j of daySlots) {
-    if (data[teacherIdx][j] === 1) { cur++; if (cur > max) max = cur; }
-    else cur = 0;
-  }
-  return max;
-}
+// ponytail: 그리디 최적화 — 매 슬롯×보직마다 (이전누적강도 + 현재누적강도)가 가장 낮은
+//   교사에게 배정. 연속감독 최대 2교시 제한(불가피한 경우 제외).
+//   O(슬롯수 × 보직수 × 교사수) — 교사/슬롯 수가 수백 이하면 충분히 빠름.
 
 function buildDaySlotMap(slots, sCount) {
   const map = {};
@@ -467,147 +206,221 @@ function buildDaySlotMap(slots, sCount) {
   return map;
 }
 
-function trySwapConsecutive(data, fixedMap, slots, daySlotMap, teacherA, swapCol, swapDay, tCount, sCount, maxAllowed) {
-  for (let b = 1; b <= tCount; b++) {
-    if (b === teacherA) continue;
-    if (data[b][swapCol] !== 0 || fixedMap[b][swapCol]) continue;
+// 해당 교사가 슬롯 j를 배정받으면 연속 3교시 이상이 되는지 확인
+function wouldExceedConsecutive(data, teacherIdx, j, slots, daySlotMap) {
+  const dayIdx = slots[j - 1].dayIdx;
+  const dayCols = daySlotMap[dayIdx] ?? [];
+  const pos = dayCols.indexOf(j);
+  if (pos < 0) return false;
 
-    for (let j = 1; j <= sCount; j++) {
-      if (j === swapCol) continue;
-      if (data[teacherA][j] !== 0 || fixedMap[teacherA][j]) continue;
-      if (data[b][j] !== 1 || fixedMap[b][j]) continue;
-
-      data[b][swapCol] = 1;
-      const jDay = slots[j - 1].dayIdx;
-      if (jDay === swapDay) data[b][j] = 0;
-      const bConsec = maxConsecutive(data, b, daySlotMap[swapDay] || []);
-      data[b][swapCol] = 0;
-      if (jDay === swapDay) data[b][j] = 1;
-
-      if (bConsec >= maxAllowed) continue;
-
-      data[teacherA][swapCol] = 0; data[b][swapCol] = 1;
-      data[teacherA][j] = 1; data[b][j] = 0;
-      return true;
-    }
+  // j 앞뒤 연속 배정 수 계산
+  let before = 0;
+  for (let k = pos - 1; k >= 0; k--) {
+    if (data[teacherIdx][dayCols[k]] === 1) before++;
+    else break;
   }
-  return false;
+  let after = 0;
+  for (let k = pos + 1; k < dayCols.length; k++) {
+    if (data[teacherIdx][dayCols[k]] === 1) after++;
+    else break;
+  }
+  return before + 1 + after > 2;
 }
 
-function trySwapSameDay(data, fixedMap, daySlotMap, teacherA, swapCol, swapDay, tCount) {
-  const dayCols = daySlotMap[swapDay] || [];
-  for (const altCol of dayCols) {
-    if (altCol === swapCol) continue;
-    if (data[teacherA][altCol] !== 0 || fixedMap[teacherA][altCol]) continue;
+function assignAll(input) {
+  const { teachers, examDays, roles, requirements, roomRequirements, fixedCells = {} } = input;
 
-    data[teacherA][swapCol] = 0; data[teacherA][altCol] = 1;
-    const aConsec = maxConsecutive(data, teacherA, dayCols);
-    data[teacherA][swapCol] = 1; data[teacherA][altCol] = 0;
-    if (aConsec >= 2) continue;
+  const tCount = teachers.length;
+  const slots = buildSlots(examDays);
+  const sCount = slots.length;
 
-    for (let b = 1; b <= tCount; b++) {
-      if (b === teacherA) continue;
-      if (data[b][swapCol] !== 0 || fixedMap[b][swapCol]) continue;
-      if (data[b][altCol] !== 1 || fixedMap[b][altCol]) continue;
+  const maxDay = examDays.length;
+  const maxPeriod = Math.max(...examDays.map(d => d.endPeriod));
+  const roleCount = roles.length;
 
-      data[b][swapCol] = 1; data[b][altCol] = 0;
-      const bConsec = maxConsecutive(data, b, dayCols);
-      data[b][swapCol] = 0; data[b][altCol] = 1;
-      if (bConsec >= 2) continue;
-
-      data[teacherA][swapCol] = 0; data[b][swapCol] = 1;
-      data[teacherA][altCol] = 1; data[b][altCol] = 0;
-      return true;
-    }
-  }
-  return false;
-}
-
-function disperseConsecutive(data, fixedMap, slots, tCount, sCount) {
+  const scheduleData = buildRequirementsArray(requirements, maxDay, maxPeriod, roleCount);
   const daySlotMap = buildDaySlotMap(slots, sCount);
-  const days = Object.keys(daySlotMap).map(Number);
 
-  for (let iter = 0; iter < 50; iter++) {
-    let improved = false;
-    for (let i = 1; i <= tCount; i++) {
-      for (const d of days) {
-        const dayCols = daySlotMap[d];
-        if (dayCols.length < 3) continue;
-        let maxLen = 0, maxStart = -1, curLen = 0, curStart = -1;
-        for (let p = 0; p < dayCols.length; p++) {
-          if (data[i][dayCols[p]] === 1) {
-            if (curLen === 0) curStart = p;
-            curLen++;
-            if (curLen > maxLen) { maxLen = curLen; maxStart = curStart; }
-          } else curLen = 0;
-        }
-        if (maxLen < 3) continue;
-        const swapPos = maxStart + Math.floor(maxLen / 2);
-        const swapCol = dayCols[swapPos];
-        if (fixedMap[i][swapCol]) continue;
-        if (trySwapConsecutive(data, fixedMap, slots, daySlotMap, i, swapCol, d, tCount, sCount, 3)) improved = true;
-      }
-    }
-    if (!improved) break;
+  // data[i][j]: '' = 미배정, 'x' = 제외, 1 = 배정확정(보직미정), '[r]' = 보직확정, 'room[r]' = 완료
+  const data = [];
+  const fixedMap = [];
+  for (let i = 0; i <= tCount; i++) {
+    data[i] = new Array(sCount + 1).fill('');
+    fixedMap[i] = new Array(sCount + 1).fill(false);
   }
 
-  for (let iter = 0; iter < 30; iter++) {
-    let improved = false;
-    for (let i = 1; i <= tCount; i++) {
-      for (const d of days) {
-        const dayCols = daySlotMap[d];
-        if (dayCols.length < 3) continue;
-        let maxLen = 0, consecStart = -1, curLen = 0, curStart = -1;
-        for (let p = 0; p < dayCols.length; p++) {
-          if (data[i][dayCols[p]] === 1) {
-            if (curLen === 0) curStart = p;
-            curLen++;
-            if (curLen > maxLen) { maxLen = curLen; consecStart = curStart; }
-          } else curLen = 0;
-        }
-        if (maxLen !== 2) continue;
-        let swapPos = consecStart;
-        let swapCol = dayCols[swapPos];
-        if (fixedMap[i][swapCol]) {
-          swapPos = consecStart + 1;
-          swapCol = dayCols[swapPos];
-          if (fixedMap[i][swapCol]) continue;
-        }
-        if (trySwapSameDay(data, fixedMap, daySlotMap, i, swapCol, d, tCount)) improved = true;
+  // 1단계: 더블클릭 수동고정 복원 (data는 1로, assignRooms 후 고사실 복원)
+  for (const iStr of Object.keys(fixedCells)) {
+    const i = parseInt(iStr);
+    for (const jStr of Object.keys(fixedCells[iStr] || {})) {
+      const j = parseInt(jStr);
+      fixedMap[i][j] = true;
+      data[i][j] = 1;
+    }
+  }
+
+  // 2단계: 제외 시간 마킹
+  for (let i = 1; i <= tCount; i++) {
+    const xSlots = teachers[i - 1].unavailableSlots || [];
+    for (const j of xSlots) {
+      if (j >= 1 && j <= sCount) data[i][j] = 'x';
+    }
+  }
+
+  // 3단계: 기본정보 고정시간 확정 (fixedCells보다 우선하지 않음)
+  for (let i = 1; i <= tCount; i++) {
+    const required = teachers[i - 1].requiredSlots || [];
+    for (const { slotIdx: j, roleIdx: r } of required) {
+      if (j >= 1 && j <= sCount) {
+        fixedMap[i][j] = true;
+        // ponytail: fixedCells(더블클릭)가 이미 값을 가지면 덮어쓰지 않음
+        const cv = fixedCells[i]?.[j];
+        if (!cv || cv === true) data[i][j] = r > 0 ? `[${r}]` : 1;
       }
     }
-    if (!improved) break;
   }
-}
 
-// ─── ④ 보직배정 ───────────────────────────────────────────────────────────────
-
-function assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, tCount, sCount) {
+  // 4단계: 업무강도 기반 그리디 배정
+  // 현재 누적 업무강도 초기화 (이전누적강도 포함)
   const workload = new Array(tCount + 1).fill(0);
   for (let i = 1; i <= tCount; i++) {
     workload[i] = teachers[i - 1].prevWorkload ?? 0;
+    // 이미 고정된 셀의 강도 반영
+    for (let j = 1; j <= sCount; j++) {
+      const r = extractRole(String(data[i][j]));
+      if (r > 0) workload[i] += roles[r - 1]?.workload ?? 0;
+    }
   }
+
+  // 슬롯×보직 조합을 필요인원 많은 순으로 정렬 (병목 슬롯 먼저)
+  const tasks = [];
+  for (let j = 1; j <= sCount; j++) {
+    const { dayIdx, period } = slots[j - 1];
+    for (let r = 1; r <= roleCount; r++) {
+      const need = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
+      if (need > 0) tasks.push({ j, r, need });
+    }
+  }
+  tasks.sort((a, b) => b.need - a.need);
+
+  for (const { j, r } of tasks) {
+    const { dayIdx, period } = slots[j - 1];
+    const need = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
+
+    // 이미 배정된 수 계산 (고정 포함)
+    let filled = 0;
+    for (let i = 1; i <= tCount; i++) {
+      const cellRole = extractRole(String(data[i][j]));
+      if (cellRole === r) filled++;
+      // data[i][j] === 1 (보직미정 고정)은 나중에 assignRoles에서 처리
+    }
+
+    let remaining = need - filled;
+    if (remaining <= 0) continue;
+
+    // 후보 교사: 강도 낮은 순 정렬, 동점은 셔플
+    // ponytail: 연속 3교시 제한 — 불가피한 경우 제약 완화 후 재시도
+    for (let pass = 0; pass < 2 && remaining > 0; pass++) {
+      const allowConsec = pass === 1; // 2번째 패스에선 연속 제한 완화
+
+      const candidates = [];
+      for (let i = 1; i <= tCount; i++) {
+        if (data[i][j] !== '' && data[i][j] !== 0) continue; // 이미 뭔가 있음
+        if (fixedMap[i][j]) continue;
+        if (allowConsec ? false : wouldExceedConsecutive(data, i, j, slots, daySlotMap)) continue;
+        candidates.push(i);
+      }
+
+      // 동점 그룹별 셔플로 랜덤성 보장
+      candidates.sort((a, b) => workload[a] - workload[b]);
+      // 동점 구간 셔플
+      let ci = 0;
+      while (ci < candidates.length) {
+        let end = ci + 1;
+        while (end < candidates.length && workload[candidates[end]] === workload[candidates[ci]]) end++;
+        const group = candidates.slice(ci, end);
+        shuffle(group).forEach((v, k) => { candidates[ci + k] = v; });
+        ci = end;
+      }
+
+      for (const i of candidates) {
+        if (remaining <= 0) break;
+        data[i][j] = 1;
+        workload[i] += roles[r - 1]?.workload ?? 0;
+        remaining--;
+      }
+    }
+  }
+
+  // 5단계: 보직배정 — 이미 보직이 정해진 셀 제외, 나머지 1인 셀에 보직 부여
+  // ponytail: assignRoles는 기존 로직 재사용 (보직 정원 관리 정확)
+  assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, workload, tCount, sCount);
+
+  // 6단계: 고사실배정
+  const roomShortages = assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomRequirements, tCount, sCount);
+
+  // 7단계: 더블클릭 고정 셀 고사실 복원
+  for (const iStr of Object.keys(fixedCells)) {
+    const i = parseInt(iStr);
+    for (const jStr of Object.keys(fixedCells[iStr] || {})) {
+      const j = parseInt(jStr);
+      const cv = fixedCells[iStr][jStr];
+      if (cv && cv !== true && extractRoom(String(cv)) && !String(cv).startsWith('[')) {
+        data[i][j] = cv;
+      }
+    }
+  }
+
+  // 8단계: 제외 고사실 처리
+  fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount);
+
+  // 최종 업무강도 재계산 (고사실 배정 후 보직이 바뀐 경우 반영)
+  const finalWorkload = new Array(tCount + 1).fill(0);
+  for (let i = 1; i <= tCount; i++) {
+    let w = teachers[i - 1].prevWorkload ?? 0;
+    for (let j = 1; j <= sCount; j++) {
+      const r = extractRole(String(data[i][j]));
+      if (r > 0) w += roles[r - 1]?.workload ?? 0;
+    }
+    finalWorkload[i] = w;
+  }
+
+  const roleCounts = calcRoleCounts(data, slots, teachers, roles, tCount, sCount);
+
+  const forbiddenViolations = [];
+  for (let i = 1; i <= tCount; i++) {
+    const forbidden = getForbiddenRooms(teachers[i - 1]);
+    for (let j = 1; j <= sCount; j++) {
+      const room = extractRoom(String(data[i][j]));
+      if (isInArray(forbidden, room)) forbiddenViolations.push({ i, j });
+    }
+  }
+
+  return { data, slots, workload: finalWorkload, roleCounts, forbiddenViolations, roomShortages };
+}
+
+// ─── 보직배정 ────────────────────────────────────────────────────────────────
+
+function assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, workload, tCount, sCount) {
+  const roleCount = roles.length;
 
   for (let j = 1; j <= sCount; j++) {
     const { dayIdx, period } = slots[j - 1];
-    const roleCount = roles.length;
 
     const remain = new Array(roleCount + 1).fill(0);
     for (let r = 1; r <= roleCount; r++) {
       remain[r] = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
     }
 
-    // 0단계: 사전 배정된 보직 인원 차감
-    // ponytail: 빠뜨리면 같은 보직 정원에서 한 명을 안 빼고 시작해서 중복 배정 → 미배정 버그
+    // 0단계: 이미 보직이 확정된 셀 차감
     for (let i = 1; i <= tCount; i++) {
       const preRole = extractRole(String(data[i][j]));
       if (preRole > 0) {
-        workload[i] += roles[preRole - 1].workload ?? 0;
         if (remain[preRole] > 0) remain[preRole]--;
       }
     }
 
-    // 1단계: 고정셀(보직 미정, data===1) 먼저
+    // 1단계: 고정셀(보직 미정, data===1) 먼저 배정
     for (let i = 1; i <= tCount; i++) {
       if (!fixedMap[i][j] || data[i][j] !== 1) continue;
       for (let r = 1; r <= roleCount; r++) {
@@ -620,34 +433,25 @@ function assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, tCoun
       }
     }
 
-    // 2단계: 일반 배정 (업무강도 낮은 순)
+    // 2단계: 일반 배정 — 업무강도 낮은 순
     for (let r = 1; r <= roleCount; r++) {
       if (remain[r] <= 0) continue;
-
       const candidates = [];
       for (let i = 1; i <= tCount; i++) {
-        if (data[i][j] === 1 && !fixedMap[i][j]) {
-          candidates.push({ i, w: workload[i] });
-        }
+        if (data[i][j] === 1 && !fixedMap[i][j]) candidates.push({ i, w: workload[i] });
       }
       candidates.sort((a, b) => a.w - b.w);
-
-      let picked = 0;
       for (const { i } of candidates) {
-        if (picked >= remain[r]) break;
-        if (extractRole(String(data[i][j])) > 0) continue;
+        if (remain[r] <= 0) break;
         data[i][j] = `[${r}]`;
         workload[i] += roles[r - 1].workload ?? 0;
-        picked++;
+        remain[r]--;
       }
-      remain[r] -= picked;
     }
   }
-
-  return workload;
 }
 
-// ─── ⑤ 고사실배정 ────────────────────────────────────────────────────────────
+// ─── 고사실배정 ──────────────────────────────────────────────────────────────
 
 function getRoleByRoomName(roomName, assignedRole) {
   if (roomName && roomName.includes('복도')) return 2;
@@ -668,8 +472,8 @@ function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomR
 
       for (let i = 1; i <= tCount; i++) {
         if (extractRole(String(data[i][j])) === r) {
-          // ponytail: 고정 셀이 이미 고사실 정보를 갖고 있으면 건너뜀(idx 증가 없음)
-          if (fixedMap[i][j] && extractRoom(String(data[i][j])).length > 0 && !String(data[i][j]).startsWith('[')) { continue; }
+          // ponytail: 고정 셀이 이미 고사실 정보를 갖고 있으면 건너뜀 (idx 증가 없음)
+          if (fixedMap[i][j] && extractRoom(String(data[i][j])).length > 0 && !String(data[i][j]).startsWith('[')) continue;
           if (idx < shuffled.length) {
             const room = shuffled[idx];
             const actualRole = getRoleByRoomName(room, r);
@@ -681,13 +485,13 @@ function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomR
           idx++;
         }
       }
-  }
+    }
   }
 
   return roomShortages;
 }
 
-// ─── ⑥ 배정불가 고사실 처리 ──────────────────────────────────────────────────
+// ─── 배정불가 고사실 처리 ────────────────────────────────────────────────────
 
 function fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount) {
   const forbiddenCache = teachers.map(t => getForbiddenRooms(t));
@@ -776,65 +580,7 @@ function fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount) {
   }
 }
 
-// ─── ⑦ 업무강도 분산 ─────────────────────────────────────────────────────────
-
-function disperseWorkload(data, fixedMap, slots, teachers, roles, tCount, sCount) {
-  const workload = new Array(tCount + 1).fill(0);
-  for (let i = 1; i <= tCount; i++) {
-    let w = teachers[i - 1].prevWorkload ?? 0;
-    for (let j = 1; j <= sCount; j++) {
-      const r = extractRole(String(data[i][j]));
-      if (r > 0) w += roles[r - 1].workload ?? 0;
-    }
-    workload[i] = w;
-  }
-
-  for (let iter = 0; iter < 200; iter++) {
-    let improved = false;
-
-    const order = [];
-    for (let i = 1; i <= tCount; i++) order.push(i);
-    order.sort((a, b) => workload[b] - workload[a]);
-
-    outer:
-    for (let oi = 0; oi < order.length; oi++) {
-      for (let oj = order.length - 1; oj > oi; oj--) {
-        const t1 = order[oi];
-        const t2 = order[oj];
-        const diff = workload[t1] - workload[t2];
-        if (diff <= 0) continue;
-
-        for (let j = 1; j <= sCount; j++) {
-          const r1 = extractRole(String(data[t1][j]));
-          const r2 = extractRole(String(data[t2][j]));
-          if (r1 <= 0 || r2 <= 0) continue;
-          if (fixedMap[t1][j] || fixedMap[t2][j]) continue;
-
-          const w1 = roles[r1 - 1].workload ?? 0;
-          const w2 = roles[r2 - 1].workload ?? 0;
-          if (w1 <= w2) continue;
-
-          const futDiff = Math.abs((workload[t1] - w1 + w2) - (workload[t2] - w2 + w1));
-          if (futDiff >= diff) continue;
-
-          const room1 = extractRoom(String(data[t1][j]));
-          const room2 = extractRoom(String(data[t2][j]));
-          data[t1][j] = `${room1}[${r2}]`;
-          data[t2][j] = `${room2}[${r1}]`;
-          workload[t1] = workload[t1] - w1 + w2;
-          workload[t2] = workload[t2] - w2 + w1;
-          improved = true;
-          break outer;
-        }
-      }
-    }
-    if (!improved) break;
-  }
-
-  return workload;
-}
-
-// ─── ⑧ 보직별보직수 계산 ─────────────────────────────────────────────────────
+// ─── 보직별 카운트 계산 ───────────────────────────────────────────────────────
 
 function calcRoleCounts(data, slots, teachers, roles, tCount, sCount) {
   const roleCount = roles.length;
@@ -850,95 +596,7 @@ function calcRoleCounts(data, slots, teachers, roles, tCount, sCount) {
   return result;
 }
 
-// ─── 메인 엔트리 ──────────────────────────────────────────────────────────────
-
-function assignAll(input) {
-  const { teachers, examDays, roles, requirements, roomRequirements, fixedCells = {} } = input;
-
-  const tCount = teachers.length;
-  const slots = buildSlots(examDays);
-  const sCount = slots.length;
-
-  const maxDay = examDays.length;
-  const maxPeriod = Math.max(...examDays.map(d => d.endPeriod));
-  const roleCount = roles.length;
-
-  const scheduleData = buildRequirementsArray(requirements, maxDay, maxPeriod, roleCount);
-
-  const slotNeeds = new Array(sCount + 1).fill(0);
-  for (let j = 1; j <= sCount; j++) {
-    const { dayIdx, period } = slots[j - 1];
-    slotNeeds[j] = totalTeachersForSlot(scheduleData, dayIdx, period, roleCount);
-  }
-
-  const data = [];
-  const fixedMap = [];
-  for (let i = 0; i <= tCount; i++) {
-    data[i] = new Array(sCount + 1).fill('');
-    fixedMap[i] = new Array(sCount + 1).fill(false);
-  }
-
-  for (const iStr of Object.keys(fixedCells)) {
-    const i = parseInt(iStr);
-    for (const jStr of Object.keys(fixedCells[iStr] || {})) {
-      const j = parseInt(jStr);
-      fixedMap[i][j] = true;
-      // ponytail: 고사실 포함 값이면 배정 단계에선 1로만 세팅, assignRooms 후 복원
-      data[i][j] = 1;
-    }
-  }
-
-  for (let i = 1; i <= tCount; i++) {
-    const xSlots = teachers[i - 1].unavailableSlots || [];
-    for (const j of xSlots) {
-      if (j >= 1 && j <= sCount) data[i][j] = 'x';
-    }
-  }
-
-  for (let i = 1; i <= tCount; i++) {
-    const required = teachers[i - 1].requiredSlots || [];
-    for (const { slotIdx: j, roleIdx: r } of required) {
-      if (j >= 1 && j <= sCount) {
-        fixedMap[i][j] = true;
-        // ponytail: fixedCells(더블클릭)가 이미 고사실 포함 값을 갖고 있으면 덮어쓰지 않음
-        const cv = fixedCells[i]?.[j];
-        if (!cv || cv === true) data[i][j] = r > 0 ? `[${r}]` : 1;
-      }
-    }
-  }
-
-  assignTeachers(data, fixedMap, slots, teachers, slotNeeds);
-  disperseByDate(data, fixedMap, slots, tCount, sCount);
-  disperseConsecutive(data, fixedMap, slots, tCount, sCount);
-  assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, tCount, sCount);
-  const roomShortages = assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomRequirements, tCount, sCount);
-
-  // ponytail: 더블클릭으로 고사실까지 고정한 셀 복원 — assignRooms가 덮어쓴 뒤에 원래 값으로 되돌림
-  for (const iStr of Object.keys(fixedCells)) {
-    const i = parseInt(iStr);
-    for (const jStr of Object.keys(fixedCells[iStr] || {})) {
-      const j = parseInt(jStr);
-      const cv = fixedCells[iStr][jStr];
-      if (cv && cv !== true && extractRoom(String(cv)) && !String(cv).startsWith('[')) {
-        data[i][j] = cv;
-      }
-    }
-  }
-  fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount);
-  const workload = disperseWorkload(data, fixedMap, slots, teachers, roles, tCount, sCount);
-  const roleCounts = calcRoleCounts(data, slots, teachers, roles, tCount, sCount);
-
-  const forbiddenViolations = [];
-  for (let i = 1; i <= tCount; i++) {
-    const forbidden = getForbiddenRooms(teachers[i - 1]);
-    for (let j = 1; j <= sCount; j++) {
-      const room = extractRoom(String(data[i][j]));
-      if (isInArray(forbidden, room)) forbiddenViolations.push({ i, j });
-    }
-  }
-
-  return { data, slots, workload, roleCounts, forbiddenViolations, roomShortages };
-}
+// ─── swap / validate ─────────────────────────────────────────────────────────
 
 function swapCells(data, fixedMap, i1, j1, i2, j2) {
   if (fixedMap[i1]?.[j1] || fixedMap[i2]?.[j2]) return false;
@@ -948,15 +606,15 @@ function swapCells(data, fixedMap, i1, j1, i2, j2) {
   return true;
 }
 
-function validateAssignment(teachers, slots, slotNeeds) {
-  const errors = [];
-  const totalQuota = teachers.reduce((s, t) => s + (t.quota ?? 0), 0);
-  const totalNeed = Object.values(slotNeeds).reduce((s, v) => s + v, 0);
-  if (totalQuota !== totalNeed) {
-    errors.push(`배정시간 합계(${totalQuota})와 총필요시간(${totalNeed})이 일치하지 않습니다.`);
+function validateAssignment(slots, requirements) {
+  // ponytail: quota 개념 제거 — 배정설정(requirements)이 비어있는지만 확인
+  if (!requirements || requirements.length === 0) {
+    return { ok: false, errors: ['배정설정 탭에서 고사실별 필요인원을 먼저 입력하세요.'] };
   }
-  return { ok: errors.length === 0, errors };
+  return { ok: true, errors: [] };
 }
+
+// ─── 스냅샷 ──────────────────────────────────────────────────────────────────
 
 function buildSaveSnapshot(state) {
   return {
@@ -1010,11 +668,7 @@ export {
   extractRole,
   extractRoom,
   calcRoleCounts,
-  disperseWorkload,
   parseRequirementsCSV,
-  distributeQuota,
-  assignRooms,
-  assignRoles,
   buildSaveSnapshot,
   applySnapshotToState,
   emptyState,
