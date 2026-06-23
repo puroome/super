@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>시험감독 배정</title>
+  <title>시험감독 배정 시스템</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -22,7 +22,7 @@
 
 <!-- 헤더 -->
 <header>
-  <h1>📋 시험감독 배정</h1>
+  <h1>📋 시험감독 배정 시스템</h1>
   <div class="header-actions">
     <button class="btn-primary btn-icon" onclick="saveAll()">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
@@ -84,9 +84,6 @@
       <h2>👩‍🏫 감독교사 목록</h2>
       <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn-primary" onclick="addTeacher()">+ 교사 추가</button>
-        <!-- ponytail: 실무에서 교사 변경은 CSV 재업로드로 처리하고, 그 경우 자동배정 실행이
-             내부적으로 autoFillQuota()를 알아서 호출하므로 이 버튼은 보류. 주석만 풀면 복구됨. -->
-        <!-- <button class="btn-outline" onclick="autoFillQuota()">⚡ 배정시간 자동채우기</button> -->
         <label class="btn-outline" style="padding:5px 12px;cursor:pointer">
           📂 CSV 업로드
           <input type="file" accept=".csv" onchange="handleTeacherCSV(event)" style="display:none">
@@ -98,10 +95,7 @@
         <table>
           <thead>
             <tr>
-              <thead>
-            <tr>
               <th rowspan="2">이름</th>
-              <th rowspan="2">배정시간</th>
               <th rowspan="2" style="cursor:pointer;user-select:none" onclick="openPrevWorkloadPicker(this)">이전누적강도 ▾</th>
               <th rowspan="2">제외 고사실</th>
               <th rowspan="2">제외 시간</th>
@@ -131,7 +125,7 @@
         <button class="btn-danger btn-sm" onclick="resetSection('rooms')">🗑 초기화</button>
       </div>
       <div id="room-list" style="margin-top:8px"></div>
-      </div>
+    </div>
 
     <!-- 보직 -->
     <div class="card">
@@ -146,7 +140,9 @@
         </thead>
         <tbody id="role-list"></tbody>
       </table>
+      <p class="csv-hint" style="margin-top:6px">업무강도: 정감독=100, 부감독=50, 대기실=10 등 (숫자 자유 설정)</p>
     </div>
+
   </div>
 </div>
 
@@ -178,10 +174,10 @@
   <div class="card">
     <h2>🎯 자동배정</h2>
     <div class="assign-actions">
-      <button id="btn-run" class="btn-run" onclick="runAssign()">🚀 자동배정</button>
-      <button id="btn-swap" class="btn-outline" onclick="doSwap()" disabled>⇄ 교환</button>
+      <button id="btn-run" class="btn-run" onclick="runAssign()">🚀 자동배정 실행</button>
+      <button id="btn-swap" class="btn-outline" onclick="doSwap()" disabled>⇄ 선택 셀 교환</button>
       <span style="color:#7a8599;font-size:11px">
-        교환할 두 셀 클릭 후 "교환" &nbsp;|&nbsp; 셀 더블클릭: 고정
+        셀 클릭: 선택(swap용) &nbsp;|&nbsp; 셀 더블클릭: 고정 토글
       </span>
     </div>
     <div id="swap-history" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
