@@ -216,12 +216,14 @@ function wouldExceedConsecutive(data, teacherIdx, j, slots, daySlotMap) {
   // j 앞뒤 연속 배정 수 계산
   let before = 0;
   for (let k = pos - 1; k >= 0; k--) {
-    if (data[teacherIdx][dayCols[k]] === 1) before++;
+    const v = data[teacherIdx][dayCols[k]];
+    if (v === 1 || extractRole(String(v)) > 0) before++;
     else break;
   }
   let after = 0;
   for (let k = pos + 1; k < dayCols.length; k++) {
-    if (data[teacherIdx][dayCols[k]] === 1) after++;
+    const v = data[teacherIdx][dayCols[k]];
+    if (v === 1 || extractRole(String(v)) > 0) after++;
     else break;
   }
   return before + 1 + after > 2;
@@ -280,78 +282,223 @@ function assignAll(input) {
     }
   }
 
-  // 4단계: 업무강도 기반 그리디 배정
-  // 현재 누적 업무강도 초기화 (이전누적강도 포함)
+  // ── 공통 카운터/헬퍼 ─────────────────────────────────────────────────────
+
+  // workload 초기화 (이전누적강도 + 고정셀 강도)
   const workload = new Array(tCount + 1).fill(0);
   for (let i = 1; i <= tCount; i++) {
     workload[i] = teachers[i - 1].prevWorkload ?? 0;
-    // 이미 고정된 셀의 강도 반영
     for (let j = 1; j <= sCount; j++) {
       const r = extractRole(String(data[i][j]));
       if (r > 0) workload[i] += roles[r - 1]?.workload ?? 0;
     }
   }
 
-  // ponytail: 슬롯별로 모든 보직을 한 번에 처리 — 강도 낮은 교사부터 강도 높은 보직(r=1) 우선 배정
-  //   같은 슬롯에서 정감독/부감독 분리 처리 시 한 교사가 부감독 몰아받는 문제 해결
-  //   O(슬롯 × 교사²) — 교사/슬롯 수백 이하에서 충분히 빠름
-  for (let j = 1; j <= sCount; j++) {
+  // 보직 미정 수동고정셀은 먼저 보직을 확정해야 남은 정원을 정확히 계산할 수 있음
+  assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, workload, tCount, sCount);
+
+  // 감독 횟수 카운터 — 총 감독수는 모든 보직, 정/부 비율은 1·2번 보직만 별도 집계
+  const supCount = new Array(tCount + 1).fill(0);
+  const roleCount1 = new Array(tCount + 1).fill(0); // 정감독 횟수
+  const roleCount2 = new Array(tCount + 1).fill(0); // 부감독 횟수
+  const recountTeacher = (i) => {
+    supCount[i] = 0;
+    roleCount1[i] = 0;
+    roleCount2[i] = 0;
+    for (let j = 1; j <= sCount; j++) {
+      const r = extractRole(String(data[i][j]));
+      if (r > 0) supCount[i]++;
+      if (r === 1) roleCount1[i]++;
+      if (r === 2) roleCount2[i]++;
+    }
+  };
+  for (let i = 1; i <= tCount; i++) recountTeacher(i);
+
+  // 예외교사 판별: 이름 텍스트에 괄호가 있으면 예외교사
+  // ponytail: 전각 괄호도 같이 처리 — 이름 표시 방식이 조금 달라도 같은 규칙 적용
+  const isException = new Array(tCount + 1).fill(false);
+  for (let i = 1; i <= tCount; i++) {
+    if (/[()（）]/.test(teachers[i - 1].name || '')) isException[i] = true;
+  }
+
+  // 슬롯 j에서 보직 r의 남은 정원
+  const remainForSlot = (j, r) => {
     const { dayIdx, period } = slots[j - 1];
+    const need = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
+    let filled = 0;
+    for (let i = 1; i <= tCount; i++) if (extractRole(String(data[i][j])) === r) filled++;
+    return Math.max(0, need - filled);
+  };
 
-    // 이 슬롯에서 필요한 보직별 잔여 정원 계산 (고정 배정 차감)
-    const remain = new Array(roleCount + 1).fill(0);
-    for (let r = 1; r <= roleCount; r++) {
-      remain[r] = scheduleData[dayIdx]?.[period]?.[r] ?? 0;
-    }
-    for (let i = 1; i <= tCount; i++) {
-      const preRole = extractRole(String(data[i][j]));
-      if (preRole > 0 && remain[preRole] > 0) remain[preRole]--;
-    }
-    const totalRemain = remain.reduce((s, v) => s + v, 0);
-    if (totalRemain <= 0) continue;
+  const remainingByRoleForSlot = (j) => {
+    const arr = new Array(roleCount + 1).fill(0);
+    for (let r = 1; r <= roleCount; r++) arr[r] = remainForSlot(j, r);
+    return arr;
+  };
 
-    // 후보 교사 수집 — 연속 3교시 제한 (2번째 패스에서 완화)
-    for (let pass = 0; pass < 2; pass++) {
+  const totalRemainingForSlot = (j) => {
+    let total = 0;
+    for (let r = 1; r <= roleCount; r++) total += remainForSlot(j, r);
+    return total;
+  };
+
+  const isAssignableCell = (i, j) => (data[i][j] === '' || data[i][j] === 0) && !fixedMap[i][j];
+
+  const putRole = (i, j, r) => {
+    data[i][j] = `[${r}]`;
+    workload[i] += roles[r - 1]?.workload ?? 0;
+    supCount[i]++;
+    if (r === 1) roleCount1[i]++;
+    if (r === 2) roleCount2[i]++;
+  };
+
+  const compareTuple = (a, b) => {
+    for (let k = 0; k < Math.min(a.length, b.length); k++) {
+      if (a[k] < b[k]) return -1;
+      if (a[k] > b[k]) return 1;
+    }
+    return 0;
+  };
+
+  // ── A. 예외교사 선배정: 가능한 슬롯은 부감독(r=2)으로 먼저 채움 ──
+  // 3연속 감독은 예외 없이 금지. 부감독 보직이 없거나 정원이 없으면 배정하지 않음.
+  if (roleCount >= 2) {
+    for (let j = 1; j <= sCount; j++) {
+      let left = remainForSlot(j, 2);
+      if (left <= 0) continue;
+
       const candidates = [];
       for (let i = 1; i <= tCount; i++) {
-        if (data[i][j] !== '' && data[i][j] !== 0) continue;
-        if (fixedMap[i][j]) continue;
-        if (pass === 0 && wouldExceedConsecutive(data, i, j, slots, daySlotMap)) continue;
+        if (!isException[i]) continue;
+        if (!isAssignableCell(i, j)) continue;
+        if (wouldExceedConsecutive(data, i, j, slots, daySlotMap)) continue;
         candidates.push(i);
       }
 
-      // 강도 낮은 순 정렬, 동점 구간은 셔플로 랜덤성 보장
-      candidates.sort((a, b) => workload[a] - workload[b]);
-      let ci = 0;
-      while (ci < candidates.length) {
-        let end = ci + 1;
-        while (end < candidates.length && workload[candidates[end]] === workload[candidates[ci]]) end++;
-        shuffle(candidates.slice(ci, end)).forEach((v, k) => { candidates[ci + k] = v; });
-        ci = end;
-      }
+      const ordered = shuffle(candidates).sort((a, b) => compareTuple(
+        [supCount[a], workload[a]],
+        [supCount[b], workload[b]],
+      ));
 
-      // 강도 높은 보직(r=1 정감독)부터 순서대로 배정
-      // ponytail: roles 순서가 정감독→부감독이라 가정. 순서가 다르면 workload 기준 내림차순 정렬 필요.
-      for (const i of candidates) {
-        let assigned = false;
-        for (let r = 1; r <= roleCount; r++) {
-          if (remain[r] <= 0) continue;
-          data[i][j] = `[${r}]`;
-          workload[i] += roles[r - 1]?.workload ?? 0;
-          remain[r]--;
-          assigned = true;
-          break;
-        }
-        if (!assigned) break; // 모든 정원 소진
-        if (remain.reduce((s, v) => s + v, 0) === 0) break;
+      for (const i of ordered) {
+        if (left <= 0) break;
+        putRole(i, j, 2);
+        left--;
       }
-
-      if (remain.reduce((s, v) => s + v, 0) === 0) break; // 모두 채웠으면 다음 슬롯
     }
   }
 
-  // 5단계: 보직배정 — 이미 보직이 정해진 셀 제외, 나머지 1인 셀에 보직 부여
-  // ponytail: assignRoles는 기존 로직 재사용 (보직 정원 관리 정확)
+  // ── B. 일반교사 목표치 계산 ────────────────────────────────────────────────
+  const regulars = [];
+  for (let i = 1; i <= tCount; i++) if (!isException[i]) regulars.push(i);
+
+  let remNeed1 = 0, remNeed2 = 0, totalRemNeed = 0;
+  for (let j = 1; j <= sCount; j++) {
+    for (let r = 1; r <= roleCount; r++) {
+      const left = remainForSlot(j, r);
+      totalRemNeed += left;
+      if (r === 1) remNeed1 += left;
+      if (r === 2) remNeed2 += left;
+    }
+  }
+
+  let currentRegular1 = 0, currentRegular2 = 0, currentRegularTotal = 0;
+  for (const i of regulars) {
+    currentRegular1 += roleCount1[i];
+    currentRegular2 += roleCount2[i];
+    currentRegularTotal += supCount[i];
+  }
+
+  const ratioDenom = currentRegular1 + currentRegular2 + remNeed1 + remNeed2;
+  const targetRatio1 = ratioDenom > 0 ? (currentRegular1 + remNeed1) / ratioDenom : 0.5;
+
+  // 교사별 가능한 추가 감독 슬롯 수. 불가 시간이 많은 교사는 capacity가 낮아지고,
+  // 목표치가 capacity까지 내려가므로 가능한 슬롯에서는 우선도가 높아진다.
+  const capacityFinal = new Array(tCount + 1).fill(0);
+  for (const i of regulars) {
+    let extra = 0;
+    for (let j = 1; j <= sCount; j++) {
+      if (totalRemainingForSlot(j) <= 0) continue;
+      if (!isAssignableCell(i, j)) continue;
+      if (wouldExceedConsecutive(data, i, j, slots, daySlotMap)) continue;
+      extra++;
+    }
+    capacityFinal[i] = supCount[i] + extra;
+  }
+
+  const calcFairTargets = () => {
+    const targets = new Array(tCount + 1).fill(0);
+    for (const i of regulars) targets[i] = supCount[i];
+    if (!regulars.length) return targets;
+
+    const desiredTotal = Math.min(
+      currentRegularTotal + totalRemNeed,
+      regulars.reduce((sum, i) => sum + capacityFinal[i], 0),
+    );
+
+    let lo = Math.min(...regulars.map(i => supCount[i]));
+    let hi = Math.max(...regulars.map(i => Math.max(supCount[i], capacityFinal[i])));
+
+    for (let iter = 0; iter < 60; iter++) {
+      const mid = (lo + hi) / 2;
+      const sum = regulars.reduce((acc, i) => acc + Math.min(capacityFinal[i], Math.max(supCount[i], mid)), 0);
+      if (sum < desiredTotal) lo = mid;
+      else hi = mid;
+    }
+
+    for (const i of regulars) {
+      targets[i] = Math.min(capacityFinal[i], Math.max(supCount[i], hi));
+    }
+    return targets;
+  };
+
+  const targetTotal = calcFairTargets();
+
+  const ratioScoreAfter = (i, r) => {
+    const c1 = roleCount1[i] + (r === 1 ? 1 : 0);
+    const c2 = roleCount2[i] + (r === 2 ? 1 : 0);
+    const denom = c1 + c2;
+    if (denom <= 0) return 0;
+    // 정/부가 아닌 보직은 비율을 직접 바꾸지 않으므로 아주 작은 후순위 패널티만 둔다.
+    const neutralPenalty = (r === 1 || r === 2) ? 0 : 0.05;
+    return Math.abs((c1 / denom) - targetRatio1) + neutralPenalty;
+  };
+
+  const scoreAssignment = (i, r) => {
+    const target = Math.max(targetTotal[i], 1);
+    const progress = supCount[i] / target;       // 1순위: 목표 감독수 대비 현재 진행률
+    const rawCount = supCount[i];                // 같은 진행률이면 실제 감독수가 적은 교사 우선
+    const ratio = ratioScoreAfter(i, r);         // 2순위: 정/부 비율 목표와의 거리
+    const w = workload[i] + (roles[r - 1]?.workload ?? 0); // 3순위: 누적강도
+    return [progress, rawCount, ratio, w, Math.random()];
+  };
+
+  // ── C. 일반교사 배정: 총횟수 → 정/부 비율 → 누적강도 순으로 좌석 하나씩 선택 ──
+  for (let j = 1; j <= sCount; j++) {
+    const remain = remainingByRoleForSlot(j);
+
+    while (remain.reduce((sum, v) => sum + v, 0) > 0) {
+      let best = null;
+
+      for (const i of regulars) {
+        if (!isAssignableCell(i, j)) continue;
+        if (wouldExceedConsecutive(data, i, j, slots, daySlotMap)) continue;
+
+        for (let r = 1; r <= roleCount; r++) {
+          if (remain[r] <= 0) continue;
+          const score = scoreAssignment(i, r);
+          if (!best || compareTuple(score, best.score) < 0) best = { i, r, score };
+        }
+      }
+
+      if (!best) break; // 3연속 제한/불가시간 때문에 더 이상 안전하게 채울 수 없는 슬롯
+
+      putRole(best.i, j, best.r);
+      remain[best.r]--;
+    }
+  }
+
+  // 5단계: 혹시 남은 보직 미정 고정셀 처리
   assignRoles(data, fixedMap, slots, teachers, scheduleData, roles, workload, tCount, sCount);
 
   // 6단계: 고사실배정
@@ -369,19 +516,11 @@ function assignAll(input) {
     }
   }
 
-  // 8단계: 제외 고사실 처리
-  fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount);
+  // 8단계: 제외 고사실 처리 — 예외교사는 부감독 보직이 유지되도록 보호
+  fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount, isException);
 
-  // 최종 업무강도 재계산 (고사실 배정 후 보직이 바뀐 경우 반영)
-  const finalWorkload = new Array(tCount + 1).fill(0);
-  for (let i = 1; i <= tCount; i++) {
-    let w = teachers[i - 1].prevWorkload ?? 0;
-    for (let j = 1; j <= sCount; j++) {
-      const r = extractRole(String(data[i][j]));
-      if (r > 0) w += roles[r - 1]?.workload ?? 0;
-    }
-    finalWorkload[i] = w;
-  }
+  // 9단계: 업무강도 분산 — 총횟수와 정/부 비율을 해치지 않는 교환만 허용
+  const finalWorkload = disperseWorkload(data, fixedMap, slots, teachers, roles, tCount, sCount, isException, targetRatio1);
 
   const roleCounts = calcRoleCounts(data, slots, teachers, roles, tCount, sCount);
 
@@ -395,6 +534,95 @@ function assignAll(input) {
   }
 
   return { data, slots, workload: finalWorkload, roleCounts, forbiddenViolations, roomShortages };
+}
+
+// ─── 업무강도 분산 ───────────────────────────────────────────────────────────
+// ponytail: 고사실 배정 완료 후 같은 슬롯의 두 교사 보직을 교환해 강도 편차를 줄임.
+//   VBA 원본 업무분산시작()과 동일한 로직. 최대 200회 반복으로 수렴 보장.
+
+function disperseWorkload(data, fixedMap, slots, teachers, roles, tCount, sCount, isException = [], targetRatio1 = 0.5) {
+  const workload = new Array(tCount + 1).fill(0);
+  const c1 = new Array(tCount + 1).fill(0);
+  const c2 = new Array(tCount + 1).fill(0);
+
+  for (let i = 1; i <= tCount; i++) {
+    let w = teachers[i - 1].prevWorkload ?? 0;
+    for (let j = 1; j <= sCount; j++) {
+      const r = extractRole(String(data[i][j]));
+      if (r > 0) w += roles[r - 1]?.workload ?? 0;
+      if (r === 1) c1[i]++;
+      if (r === 2) c2[i]++;
+    }
+    workload[i] = w;
+  }
+
+  const ratioDev = (one, two) => {
+    const denom = one + two;
+    return denom > 0 ? Math.abs((one / denom) - targetRatio1) : 0;
+  };
+
+  const nextCountsAfterSwap = (i, outRole, inRole) => {
+    let n1 = c1[i], n2 = c2[i];
+    if (outRole === 1) n1--;
+    if (outRole === 2) n2--;
+    if (inRole === 1) n1++;
+    if (inRole === 2) n2++;
+    return [n1, n2];
+  };
+
+  for (let iter = 0; iter < 200; iter++) {
+    let improved = false;
+    const order = [];
+    for (let i = 1; i <= tCount; i++) {
+      if (!isException[i]) order.push(i);
+    }
+    order.sort((a, b) => workload[b] - workload[a]);
+
+    outer:
+    for (let oi = 0; oi < order.length; oi++) {
+      for (let oj = order.length - 1; oj > oi; oj--) {
+        const t1 = order[oi];  // 강도 높음
+        const t2 = order[oj];  // 강도 낮음
+        const diff = workload[t1] - workload[t2];
+        if (diff <= 0) continue;
+
+        for (let j = 1; j <= sCount; j++) {
+          const r1 = extractRole(String(data[t1][j]));
+          const r2 = extractRole(String(data[t2][j]));
+          if (r1 <= 0 || r2 <= 0 || r1 === r2) continue;
+          if (fixedMap[t1][j] || fixedMap[t2][j]) continue;
+
+          const w1 = roles[r1 - 1]?.workload ?? 0;
+          const w2 = roles[r2 - 1]?.workload ?? 0;
+          if (w1 <= w2) continue;  // t1이 이미 가벼운 보직이면 교환 의미 없음
+
+          const futDiff = Math.abs((workload[t1] - w1 + w2) - (workload[t2] - w2 + w1));
+          if (futDiff >= diff) continue;  // 교환해도 개선 안 됨
+
+          // 2순위인 정/부 비율을 해치는 업무강도 교환은 하지 않음
+          const beforeRatio = ratioDev(c1[t1], c2[t1]) + ratioDev(c1[t2], c2[t2]);
+          const [t1n1, t1n2] = nextCountsAfterSwap(t1, r1, r2);
+          const [t2n1, t2n2] = nextCountsAfterSwap(t2, r2, r1);
+          const afterRatio = ratioDev(t1n1, t1n2) + ratioDev(t2n1, t2n2);
+          if (afterRatio > beforeRatio + 1e-9) continue;
+
+          const room1 = extractRoom(String(data[t1][j]));
+          const room2 = extractRoom(String(data[t2][j]));
+          data[t1][j] = `${room1}[${r2}]`;
+          data[t2][j] = `${room2}[${r1}]`;
+          workload[t1] = workload[t1] - w1 + w2;
+          workload[t2] = workload[t2] - w2 + w1;
+          c1[t1] = t1n1; c2[t1] = t1n2;
+          c1[t2] = t2n1; c2[t2] = t2n2;
+          improved = true;
+          break outer;
+        }
+      }
+    }
+    if (!improved) break;
+  }
+
+  return workload;
 }
 
 // ─── 보직배정 ────────────────────────────────────────────────────────────────
@@ -474,7 +702,7 @@ function assignRooms(data, fixedMap, slots, teachers, scheduleData, roles, roomR
 
 // ─── 배정불가 고사실 처리 ────────────────────────────────────────────────────
 
-function fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount) {
+function fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount, isException = []) {
   const forbiddenCache = teachers.map(t => getForbiddenRooms(t));
 
   for (let pass = 0; pass < 10; pass++) {
@@ -490,6 +718,7 @@ function fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount) {
 
         let swapped = false;
 
+        // 1) 같은 보직끼리 고사실만 교환 — 예외교사의 부감독 보직도 유지됨
         for (let k = 1; k <= tCount && !swapped; k++) {
           if (k === i) continue;
           const roleK = extractRole(String(data[k][j]));
@@ -504,6 +733,7 @@ function fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount) {
           swapped = true; changed = true;
         }
 
+        // 2) 같은 보직 3자 순환
         if (!swapped) {
           outer:
           for (let jj = 1; jj <= tCount; jj++) {
@@ -538,10 +768,11 @@ function fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount) {
           }
         }
 
-        if (!swapped) {
+        // 3) 다른 보직과 교환은 최후 수단. 단, 예외교사는 부감독 보직을 절대 바꾸지 않음.
+        if (!swapped && !isException[i]) {
           for (let diff = 1; diff <= 4 && !swapped; diff++) {
             for (let k = 1; k <= tCount && !swapped; k++) {
-              if (k === i) continue;
+              if (k === i || isException[k]) continue;
               const roleK = extractRole(String(data[k][j]));
               if (Math.abs(roleI - roleK) !== diff) continue;
               const roomK = extractRoom(String(data[k][j]));
@@ -559,6 +790,20 @@ function fixForbiddenRooms(data, fixedMap, slots, teachers, tCount, sCount) {
     }
     if (!changed) break;
   }
+}
+
+
+function calcWorkload(data, teachers, roles, tCount, sCount) {
+  const workload = new Array(tCount + 1).fill(0);
+  for (let i = 1; i <= tCount; i++) {
+    let w = teachers[i - 1]?.prevWorkload ?? 0;
+    for (let j = 1; j <= sCount; j++) {
+      const r = extractRole(String(data[i]?.[j] ?? ''));
+      if (r > 0) w += roles[r - 1]?.workload ?? 0;
+    }
+    workload[i] = w;
+  }
+  return workload;
 }
 
 // ─── 보직별 카운트 계산 ───────────────────────────────────────────────────────
@@ -649,6 +894,7 @@ export {
   extractRole,
   extractRoom,
   calcRoleCounts,
+  calcWorkload,
   parseRequirementsCSV,
   buildSaveSnapshot,
   applySnapshotToState,

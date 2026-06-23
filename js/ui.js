@@ -2,7 +2,7 @@
 
 import {
   assignAll, swapCells, validateAssignment,
-  buildSlots, extractRole, extractRoom, calcRoleCounts,
+  buildSlots, extractRole, extractRoom, calcRoleCounts, calcWorkload,
   parseRequirementsCSV,
   buildSaveSnapshot, applySnapshotToState, emptyState,
   csvField, gridCellDisplay, normalizeSlotStr,
@@ -327,12 +327,18 @@ function onCellDblClick(i, j) {
   renderAssignGrid();
 }
 
+function refreshAssignmentStats() {
+  state.roleCounts = calcRoleCounts(state.data, state.slots, state.teachers, state.roles,
+    state.teachers.length, state.slots.length);
+  state.workload = calcWorkload(state.data, state.teachers, state.roles,
+    state.teachers.length, state.slots.length);
+}
+
 function doSwap() {
   if (state.selectedCells.length !== 2) return;
   const [c1, c2] = state.selectedCells;
   if (swapCells(state.data, state.fixedCells, c1.i, c1.j, c2.i, c2.j)) {
-    state.roleCounts = calcRoleCounts(state.data, state.slots, state.teachers, state.roles,
-      state.teachers.length, state.slots.length);
+    refreshAssignmentStats();
     if (!state.swapHistory) state.swapHistory = [];
     const getName = (c) => state.teachers[c.i - 1]?.name ?? c.i;
     const getSlot = (c) => state.slots[c.j - 1] ? `${state.slots[c.j - 1].dayIdx}일${state.slots[c.j - 1].period}교시` : c.j;
@@ -349,8 +355,7 @@ window.undoSwap = (idx) => {
   const h = state.swapHistory?.[idx];
   if (!h) return;
   swapCells(state.data, state.fixedCells, h.c1.i, h.c1.j, h.c2.i, h.c2.j);
-  state.roleCounts = calcRoleCounts(state.data, state.slots, state.teachers, state.roles,
-    state.teachers.length, state.slots.length);
+  refreshAssignmentStats();
   state.swapHistory.splice(idx, 1);
   renderAssignGrid();
 };
