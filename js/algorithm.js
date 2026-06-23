@@ -69,7 +69,7 @@ function pruneRoomRequirements(roomRequirements, rooms) {
   return roomRequirements.filter(r => validRooms.has(r.roomName));
 }
 
-// roomRequirements(고사실별 배정감독수)를 날짜/교시/보직별 합계로 집계
+// roomRequirements(aggregateRoomRequirements)를 날짜/교시/보직별 합계로 집계
 function aggregateRoomRequirements(roomRequirements) {
   const map = {};
   roomRequirements.forEach(({ dayIdx, period, roleIdx, count }) => {
@@ -80,6 +80,21 @@ function aggregateRoomRequirements(roomRequirements) {
     const [dayIdx, period, roleIdx] = key.split('_').map(Number);
     return { dayIdx, period, roleIdx, count };
   });
+}
+
+// 보직(역할)을 삭제하면 그 뒤 보직들의 roleIdx(1-base 순번)가 한 칸씩 당겨진다.
+// 삭제된 보직 관련 항목은 버리고, 그 뒤 항목들은 roleIdx를 1씩 줄여 새 순번에 맞춘다.
+function removeRoleFromRequirements(roomRequirements, removedRoleIdx) {
+  return roomRequirements
+    .filter(r => r.roleIdx !== removedRoleIdx)
+    .map(r => r.roleIdx > removedRoleIdx ? { ...r, roleIdx: r.roleIdx - 1 } : r);
+}
+
+// 시험 날짜를 삭제하면 그 뒤 날짜들의 dayIdx(1-base 순번)가 한 칸씩 당겨진다. 위와 동일한 보정.
+function removeDayFromRequirements(roomRequirements, removedDayIdx) {
+  return roomRequirements
+    .filter(r => r.dayIdx !== removedDayIdx)
+    .map(r => r.dayIdx > removedDayIdx ? { ...r, dayIdx: r.dayIdx - 1 } : r);
 }
 
 // 자동배정 결과 그리드의 셀 1칸을 어떻게 표시할지 결정.
@@ -990,4 +1005,6 @@ export {
   parseRequiredSlots,
   pruneRoomRequirements,
   aggregateRoomRequirements,
+  removeRoleFromRequirements,
+  removeDayFromRequirements,
 };

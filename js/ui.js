@@ -8,6 +8,7 @@ import {
   csvField, gridCellDisplay, normalizeSlotStr,
   parseUnavailableSlots, parseRequiredSlots,
   pruneRoomRequirements, aggregateRoomRequirements,
+  removeRoleFromRequirements, removeDayFromRequirements,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
@@ -659,11 +660,15 @@ function resetSection(section) {
     roles: '보직 및 업무강도',
     requirements: '배정설정',
   };
-  if (!confirm(`"${labels[section] ?? section}" 데이터를 초기화합니다. 계속할까요?`)) return;
-  if (section === 'examDays') { state.examDays = []; renderExamDayList(); }
+  const impactedCount = (section === 'examDays' || section === 'roles') ? state.roomRequirements.length : 0;
+  const warn = impactedCount
+    ? `\n⚠️ 배정설정 데이터 ${impactedCount}건도 함께 삭제됩니다.`
+    : '';
+  if (!confirm(`"${labels[section] ?? section}" 데이터를 초기화합니다.${warn}\n계속할까요?`)) return;
+  if (section === 'examDays') { state.examDays = []; state.roomRequirements = []; syncRequirements(); renderExamDayList(); renderRequirementsTab(); }
   else if (section === 'teachers') { state.teachers = []; renderTeacherList(); }
   else if (section === 'rooms') { state.rooms = []; pruneStaleRoomRequirements(); renderRoomList(); renderRequirementsTab(); }
-  else if (section === 'roles') { state.roles = []; renderRoleList(); }
+  else if (section === 'roles') { state.roles = []; state.roomRequirements = []; syncRequirements(); renderRoleList(); renderRequirementsTab(); }
   else if (section === 'requirements') {
     state.requirements = [];
     state.roomRequirements = [];
@@ -759,12 +764,17 @@ function importTeacherCSV(text) {
 function importRoomCSV(text) {
   // ponytail: 기존 목록을 완전히 교체 — 덮어쓰기(merge) 아님
   const lines = text.trim().split('\n').slice(1);
-  state.rooms = lines.map(l => l.trim()).filter(Boolean);
-  const removed = pruneStaleRoomRequirements();
+  const newRooms = lines.map(l => l.trim()).filter(Boolean);
+  const kept = pruneRoomRequirements(state.roomRequirements, newRooms);
+  const affected = state.roomRequirements.length - kept.length;
+  if (!confirmStaleImpact(affected, '고사실 목록 전체')) return;
+  state.rooms = newRooms;
+  state.roomRequirements = kept;
+  syncRequirements();
   renderRoomList();
   renderRequirementsTab();
   toast(`고사실 ${state.rooms.length}개 가져오기 완료 (기존 목록 교체)`
-    + (removed ? ` · 이름이 바뀌어 더이상 없는 고사실의 배정감독수 설정 ${removed}건 삭제됨 — 배정설정 탭에서 다시 입력하세요` : ''), 5000);
+    + (affected ? ` · 이름이 바뀌어 더이상 없는 고사실의 배정감독수 설정 ${affected}건 삭제됨 — 배정설정 탭에서 다시 입력하세요` : ''), 5000);
 }
 
 function downloadTeacherCSVTemplate() {
@@ -801,15 +811,49 @@ window.updateRoomReq = updateRoomReq;
 window.onCellClick = onCellClick;
 window.onCellDblClick = onCellDblClick;
 
+// ponytail: 고사실/보직/날짜는 "전순위"(기본정보) 설정이고, 배정설정(roomRequirements)은
+//   거기 의존하는 "후순위" 데이터다. 전순위를 삭제하기 전에, 영향받는 후순위 데이터가
+//   있으면 경고하고 확인을 받는다 — 확인을 안 하면 삭제 자체를 취소해서 바로 적용되지 않게 한다.
+function confirmStaleImpact(affectedCount, what) {
+  if (!affectedCount) return true;
+  return confirm(
+    `"${what}"과 관련된 배정설정(배정감독수) 데이터 ${affectedCount}건이 있습니다.\n` +
+    `삭제하면 이 데이터도 같이 정리됩니다. 삭제 후 배정설정 탭에서 꼭 다시 확인해주세요.\n계속하시겠습니까?`
+  );
+}
+
 window.removeTeacher = (idx) => { state.teachers.splice(idx, 1); renderTeacherList(); };
 window.removeRoom = (idx) => {
+  const room = state.rooms[idx];
+  const affected = state.roomRequirements.filter(r => r.roomName === room).length;
+  if (!confirmStaleImpact(affected, `고사실 "${room}"`)) return;
   state.rooms.splice(idx, 1);
   pruneStaleRoomRequirements();
   renderRoomList();
   renderRequirementsTab();
 };
-window.removeRole = (idx) => { state.roles.splice(idx, 1); renderRoleList(); };
-window.removeExamDay = (idx) => { state.examDays.splice(idx, 1); renderExamDayList(); };
+window.removeRole = (idx) => {
+  const removedRoleIdx = idx + 1;
+  const role = state.roles[idx];
+  const affected = state.roomRequirements.filter(r => r.roleIdx === removedRoleIdx).length;
+  if (!confirmStaleImpact(affected, `보직 "${role?.name}"`)) return;
+  state.roles.splice(idx, 1);
+  state.roomRequirements = removeRoleFromRequirements(state.roomRequirements, removedRoleIdx);
+  syncRequirements();
+  renderRoleList();
+  renderRequirementsTab();
+};
+window.removeExamDay = (idx) => {
+  const removedDayIdx = idx + 1;
+  const day = state.examDays[idx];
+  const affected = state.roomRequirements.filter(r => r.dayIdx === removedDayIdx).length;
+  if (!confirmStaleImpact(affected, `날짜 "${formatDate(day?.date)}"`)) return;
+  state.examDays.splice(idx, 1);
+  state.roomRequirements = removeDayFromRequirements(state.roomRequirements, removedDayIdx);
+  syncRequirements();
+  renderExamDayList();
+  renderRequirementsTab();
+};
 
 window.addTeacher = () => {
   state.teachers.push({ name: '새교사', quota: 0, prevWorkload: 0, forbiddenRooms: '', unavailableSlots: '', requiredSlotStr: '', requiredRoleStr: '' });

@@ -1,6 +1,6 @@
 // tests/room-requirements-prune.test.mjs — node tests/room-requirements-prune.test.mjs 로 실행
 import assert from 'node:assert';
-import { pruneRoomRequirements, aggregateRoomRequirements } from '../js/algorithm.js';
+import { pruneRoomRequirements, aggregateRoomRequirements, removeRoleFromRequirements, removeDayFromRequirements } from '../js/algorithm.js';
 
 const roomRequirements = [
   { dayIdx: 1, period: 1, roleIdx: 1, roomName: '202', count: 2 },
@@ -32,3 +32,29 @@ const roomRequirements = [
 }
 
 console.log('OK: pruneRoomRequirements/aggregateRoomRequirements 정상 동작 (고사실명 변경 시 고아데이터 정리)');
+
+// removeRoleFromRequirements: 삭제된 보직(roleIdx) 관련 항목은 버리고, 뒤 보직들은 한 칸씩 당김
+{
+  const reqs = [
+    { dayIdx: 1, period: 1, roleIdx: 1, roomName: '101', count: 2 }, // 1번 보직(삭제 대상)
+    { dayIdx: 1, period: 1, roleIdx: 2, roomName: '101', count: 3 }, // 2번 보직 → 1번으로 당겨짐
+    { dayIdx: 1, period: 1, roleIdx: 3, roomName: '101', count: 1 }, // 3번 보직 → 2번으로 당겨짐
+  ];
+  assert.deepStrictEqual(removeRoleFromRequirements(reqs, 1), [
+    { dayIdx: 1, period: 1, roleIdx: 1, roomName: '101', count: 3 },
+    { dayIdx: 1, period: 1, roleIdx: 2, roomName: '101', count: 1 },
+  ]);
+}
+
+// removeDayFromRequirements: 삭제된 날짜(dayIdx) 관련 항목은 버리고, 뒤 날짜들은 한 칸씩 당김
+{
+  const reqs = [
+    { dayIdx: 1, period: 1, roleIdx: 1, roomName: '101', count: 2 }, // 1일차(삭제 대상)
+    { dayIdx: 2, period: 1, roleIdx: 1, roomName: '101', count: 3 }, // 2일차 → 1일차로 당겨짐
+  ];
+  assert.deepStrictEqual(removeDayFromRequirements(reqs, 1), [
+    { dayIdx: 1, period: 1, roleIdx: 1, roomName: '101', count: 3 },
+  ]);
+}
+
+console.log('OK: removeRoleFromRequirements/removeDayFromRequirements 정상 동작 (보직/날짜 삭제 시 인덱스 보정)');
