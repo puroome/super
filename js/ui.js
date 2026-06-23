@@ -428,10 +428,8 @@ function openAllRequiredRolePrompt() {
     let answer;
 
     while (true) {
-      answer = prompt(
-  `${task.dayIdx}일차 ${task.period}교시 ${task.teacherName} 선생님`,
-  defaultValue
-);
+      answer = prompt(`${task.dayIdx}일차 ${task.period}교시 ${task.teacherName} 선생님
+1=정감독, 2=부감독`, defaultValue);
       if (answer === null) return;
       answer = answer.trim();
       if (answer === '1' || answer === '2') break;
@@ -771,12 +769,10 @@ function importTeacherCSV(text) {
     const normReqSlot = normalizeSlotStr(requiredSlotStr || '');
     const normReqRole = normalizeRoleStr(requiredRoleStr || '');
 
-    if (normReqSlot || normReqRole) {
-      const slotsArr = normReqSlot ? normReqSlot.split(',').map(s => s.trim()).filter(Boolean) : [];
-      const rolesArr = normReqRole ? normReqRole.split(',').map(s => s.trim()).filter(Boolean) : [];
-      if (slotsArr.length !== rolesArr.length) {
-        errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 ${slotsArr.length}개 ≠ 감독유형 ${rolesArr.length}개 — 개수가 일치해야 합니다.`);
-      }
+    const slotsArr = normReqSlot ? normReqSlot.split(',').map(s => s.trim()).filter(Boolean) : [];
+    const rolesArr = normReqRole ? normReqRole.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+    if (normReqSlot) {
       slotsArr.forEach(s => {
         if (!/^\d{2,}$/.test(s)) errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 "${s}"의 형식이 올바르지 않습니다. 예: 12 = 1일차 2교시`);
       });
@@ -785,6 +781,16 @@ function importTeacherCSV(text) {
         if (parsedSlots.length !== slotsArr.length) {
           errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 중 시험 날짜/교시에 없는 값이 있습니다.`);
         }
+      }
+    }
+
+    // 고정감독 유형은 CSV 업로드 시 비워둘 수 있음.
+    // 비워둔 경우에는 나중에 '유형' 헤더 클릭 팝업으로 일괄 입력한다.
+    if (normReqRole) {
+      if (!normReqSlot) {
+        errors.push(`${rowIdx + 2}행 (${name || '?'}): 감독유형은 고정시간이 있을 때만 입력할 수 있습니다.`);
+      } else if (slotsArr.length !== rolesArr.length) {
+        errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 ${slotsArr.length}개 ≠ 감독유형 ${rolesArr.length}개 — 개수가 일치해야 합니다.`);
       }
       rolesArr.forEach(r => {
         if (r !== '1' && r !== '2') errors.push(`${rowIdx + 2}행 (${name || '?'}): 감독유형 "${r}"은 1(정감독) 또는 2(부감독)만 입력 가능합니다.`);
