@@ -139,7 +139,7 @@ function autoFillQuota() {
 function renderRoomList() {
   const el = document.getElementById('room-list');
   el.innerHTML = state.rooms.map((r, i) => `
-    <tr><td><input value="${r}" onchange="updateRoom(${i},this.value)" style="width:100%"></td><td><button onclick="removeRoom(${i})">×</button></td></tr>
+    <tr><td><input value="${r}" onchange="updateRoom(${i},this.value)" style="width:100%"></td><td><button onclick="removeRoom(${i})">삭제</button></td></tr>
   `).join('');
 }
 
