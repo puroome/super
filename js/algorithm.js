@@ -17,10 +17,50 @@ function isInArray(arr, val) {
   return Array.isArray(arr) && arr.includes(val);
 }
 
+// ponytail: 입력 구분자(쉼표/세미콜론, 하이픈/언더스코어)는 관용적으로 받되 표준 출력은
+//   "일차_교시" 언더스코어로 통일한다. 하이픈(-)을 쓰면 엑셀이 CSV를 열 때 날짜로 오인해버린다.
+function normalizeSlotStr(str) {
+  if (str == null || !String(str).trim()) return '';
+  return String(str).split(/[,;]/).map(s => s.trim()).filter(Boolean)
+    .map(tok => {
+      const m = tok.match(/^(\d+)[-_](\d+)$/);
+      return m ? `${m[1]}_${m[2]}` : tok; // 형식이 어긋난 토큰은 그대로 둬서 사용자가 보고 고치게 함
+    })
+    .join(', ');
+}
+
 // ponytail: RFC4180 — 쉼표/따옴표가 있는 값만 따옴표로 감싸기 (parseCSVLine과 짝)
 function csvField(v) {
   v = String(v ?? '');
   return /[,"]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+}
+
+// ponytail: 구분자(,/;)·시간형식(-/_) 모두 관용적으로 받음 (옛 데이터 호환)
+function parseUnavailableSlots(str, slots) {
+  if (!str || !str.trim()) return [];
+  return str.split(/[,;]/).map(s => s.trim()).filter(Boolean).flatMap(token => {
+    const [dayPart, periodPart] = token.split(/[-_]/);
+    const dayIdx = parseInt(dayPart);
+    const period = parseInt(periodPart);
+    if (isNaN(dayIdx) || isNaN(period)) return [];
+    const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
+    return j > 0 ? [j] : [];
+  });
+}
+
+function parseRequiredSlots(slotStr, roleStr, slots) {
+  if (!slotStr || !slotStr.trim()) return [];
+  const slotTokens = slotStr.split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  const roleTokens = (roleStr || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
+  return slotTokens.flatMap((token, idx) => {
+    const [dayPart, periodPart] = token.split(/[-_]/);
+    const dayIdx = parseInt(dayPart);
+    const period = parseInt(periodPart);
+    const roleIdx = parseInt(roleTokens[idx] ?? '1');
+    if (isNaN(dayIdx) || isNaN(period)) return [];
+    const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
+    return j > 0 ? [{ slotIdx: j, roleIdx: isNaN(roleIdx) ? 1 : roleIdx }] : [];
+  });
 }
 
 // 자동배정 결과 그리드의 셀 1칸을 어떻게 표시할지 결정.
@@ -926,4 +966,7 @@ export {
   emptyState,
   csvField,
   gridCellDisplay,
+  normalizeSlotStr,
+  parseUnavailableSlots,
+  parseRequiredSlots,
 };

@@ -5,7 +5,8 @@ import {
   buildSlots, extractRole, extractRoom, calcRoleCounts,
   parseRequirementsCSV, distributeQuota,
   buildSaveSnapshot, applySnapshotToState, emptyState,
-  csvField, gridCellDisplay,
+  csvField, gridCellDisplay, normalizeSlotStr,
+  parseUnavailableSlots, parseRequiredSlots,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
@@ -51,22 +52,11 @@ function initTabs() {
 }
 
 // ─── 입력 형식 정규화 ─────────────────────────────────────────────────────────
-// ponytail: 예전엔 표 입력은 쉼표(placeholder가 "1_1,2_3"), CSV·파서는 세미콜론을
-//   써서 구분자가 뒤섞였다. 게다가 파서가 세미콜론만 split 해서 표에 "1_1,2_3"을
-//   치면 2_3이 조용히 무시되는 버그가 있었다. 이제 입력 구분자는 쉼표/세미콜론
-//   둘 다 받아주되(관용), 저장·표시는 항상 표준형으로 통일한다.
-//   - 시간: "일차-교시" (예: 1-3, 2-1)
+// ponytail: 입력 구분자(쉼표/세미콜론, 하이픈/언더스코어)는 관용적으로 받아주되,
+//   저장·표시는 항상 표준형으로 통일한다.
+//   - 시간: "일차_교시" (예: 1_3, 2_1) — 하이픈(-)을 쓰면 엑셀이 날짜로 오인하므로 언더스코어 사용
 //   - 항목 구분: ", " (쉼표+공백)
-
-function normalizeSlotStr(str) {
-  if (str == null || !String(str).trim()) return '';
-  return String(str).split(/[,;]/).map(s => s.trim()).filter(Boolean)
-    .map(tok => {
-      const m = tok.match(/^(\d+)[-_](\d+)$/);
-      return m ? `${m[1]}-${m[2]}` : tok; // 형식이 어긋난 토큰은 그대로 둬서 사용자가 보고 고치게 함
-    })
-    .join(', ');
-}
+//   normalizeSlotStr 자체는 algorithm.js에 있음 (DOM 의존성 없는 순수함수라 테스트 가능)
 
 function normalizeRoleStr(str) {
   if (str == null || !String(str).trim()) return '';
@@ -104,41 +94,13 @@ function renderTeacherList() {
       <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
       <td><input type="number" value="${t.quota ?? 0}" onchange="updateTeacher(${i},'quota',+this.value)" style="width:50px"></td>
       <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
-      <td><input value="${t.forbiddenRooms ?? ''}" placeholder="101, 102" onchange="updateTeacherField(${i},'forbiddenRooms',this)" style="width:90px"></td>
-      <td><input value="${t.unavailableSlots ?? ''}" placeholder="1-1, 2-3" title="제외 시간: 일차-교시 (예: 1-1, 2-3)" onchange="updateTeacherField(${i},'unavailableSlots',this)" style="width:90px"></td>
-      <td><input value="${t.requiredSlotStr ?? ''}" placeholder="1-2, 2-1" title="고정 시간: 일차-교시 (예: 1-2, 2-1)" onchange="updateTeacherField(${i},'requiredSlotStr',this)" style="width:90px"></td>
-      <td><input value="${t.requiredRoleStr ?? ''}" placeholder="1, 2" title="고정 시간의 감독유형: 1=정감독, 2=부감독 (쉼표 구분, 위 시간과 개수 일치)" onchange="updateTeacherField(${i},'requiredRoleStr',this)" style="width:70px"></td>
+      <td><input value="${t.forbiddenRooms ?? ''}" title="제외 고사실 (예: 101, 102)" onchange="updateTeacherField(${i},'forbiddenRooms',this)" style="width:90px"></td>
+      <td><input value="${t.unavailableSlots ?? ''}" title="제외 시간: 일차_교시 (예: 1_1, 2_3)" onchange="updateTeacherField(${i},'unavailableSlots',this)" style="width:90px"></td>
+      <td><input value="${t.requiredSlotStr ?? ''}" title="고정 시간: 일차_교시 (예: 1_2, 2_1)" onchange="updateTeacherField(${i},'requiredSlotStr',this)" style="width:90px"></td>
+      <td><input value="${t.requiredRoleStr ?? ''}" title="고정 시간의 감독유형: 1=정감독, 2=부감독 (쉼표 구분, 위 시간과 개수 일치)" onchange="updateTeacherField(${i},'requiredRoleStr',this)" style="width:70px"></td>
       <td><button onclick="removeTeacher(${i})">삭제</button></td>
     </tr>
   `).join('');
-}
-
-function parseUnavailableSlots(str, slots) {
-  if (!str || !str.trim()) return [];
-  // ponytail: 구분자(,/;)·시간형식(-/_) 모두 관용적으로 받음 (옛 데이터 호환)
-  return str.split(/[,;]/).map(s => s.trim()).filter(Boolean).flatMap(token => {
-    const [dayPart, periodPart] = token.split(/[-_]/);
-    const dayIdx = parseInt(dayPart);
-    const period = parseInt(periodPart);
-    if (isNaN(dayIdx) || isNaN(period)) return [];
-    const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
-    return j > 0 ? [j] : [];
-  });
-}
-
-function parseRequiredSlots(slotStr, roleStr, slots) {
-  if (!slotStr || !slotStr.trim()) return [];
-  const slotTokens = slotStr.split(/[,;]/).map(s => s.trim()).filter(Boolean);
-  const roleTokens = (roleStr || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
-  return slotTokens.flatMap((token, idx) => {
-    const [dayPart, periodPart] = token.split(/[-_]/);
-    const dayIdx = parseInt(dayPart);
-    const period = parseInt(periodPart);
-    const roleIdx = parseInt(roleTokens[idx] ?? '1');
-    if (isNaN(dayIdx) || isNaN(period)) return [];
-    const j = slots.findIndex(s => s.dayIdx === dayIdx && s.period === period) + 1;
-    return j > 0 ? [{ slotIdx: j, roleIdx: isNaN(roleIdx) ? 1 : roleIdx }] : [];
-  });
 }
 
 function autoFillQuota() {
@@ -333,6 +295,11 @@ function renderAssignGrid() {
 
   for (let i = 1; i <= tCount; i++) {
     const t = state.teachers[i - 1];
+    // ponytail: "고정"은 두 경로로 생긴다 — ①더블클릭 수동잠금(fixedCells) ②교사의 고정시간 설정(requiredSlotStr).
+    //   배정 고사실은 바뀌어도 ②는 항상 고정이어야 하므로 매 렌더마다 다시 계산.
+    const requiredSlotIdxs = new Set(
+      parseRequiredSlots(t.requiredSlotStr || '', t.requiredRoleStr || '', slots).map(r => r.slotIdx)
+    );
     html += `<tr>
       <td>${i}</td>
       <td>${t.name}</td>
@@ -341,13 +308,18 @@ function renderAssignGrid() {
       ${slots.map((s, idx) => {
         const j = idx + 1;
         const cell = String(data[i]?.[j] ?? '');
-        const isFixed = fixedCells[i]?.[j];
+        const isManualFixed = !!fixedCells[i]?.[j];
+        const isRequiredFixed = requiredSlotIdxs.has(j);
+        const isFixed = isManualFixed || isRequiredFixed;
         const { bg, text } = gridCellDisplay(cell, isFixed);
         const selClass = state.selectedCells.some(c => c.i === i && c.j === j) ? ' selected-cell' : '';
+        const title = isRequiredFixed ? '고정시간 설정에 의해 배정됨 (기본정보 탭에서 변경)'
+          : isManualFixed ? '고정됨 (더블클릭으로 해제)'
+          : '클릭: 선택 / 더블클릭: 고정';
         return `<td class="grid-cell${selClass}" style="background:${bg}"
           onclick="onCellClick(${i},${j})"
           ondblclick="onCellDblClick(${i},${j})"
-          title="${isFixed ? '고정됨 (더블클릭으로 해제)' : '클릭: 선택 / 더블클릭: 고정'}"
+          title="${title}"
         >${text}</td>`;
       }).join('')}
       <td>${state.roleCounts[i - 1]?.counts.reduce((s, v) => s + v, 0) ?? 0}</td>
@@ -698,7 +670,7 @@ function resetSection(section) {
 }
 
 // RFC4180 한 줄 파싱: 큰따옴표로 감싼 필드 안의 쉼표를 보존
-// ponytail: 엑셀은 칸에 "1-3, 2-1"처럼 쉼표가 있으면 자동으로 따옴표로 감싸서 저장한다.
+// ponytail: 엑셀은 칸에 "1_3, 2_1"처럼 쉼표가 있으면 자동으로 따옴표로 감싸서 저장한다.
 //   그래서 칸 안에서도 쉼표(", ")로 통일할 수 있다. 옛 세미콜론 파일도 그대로 읽힌다.
 function parseCSVLine(line) {
   const out = [];
@@ -730,7 +702,7 @@ function importTeacherCSV(text) {
     const parts = parseCSVLine(line);
     const [name, prevWorkload, forbiddenRooms, unavailableSlots, requiredSlotStr, requiredRoleStr] = parts;
 
-    // 표준형으로 정규화 (시간 일차-교시, 항목 ", ")
+    // 표준형으로 정규화 (시간 일차_교시, 항목 ", ")
     const normRooms = normalizeRoomStr(forbiddenRooms || '');
     const normUnavail = normalizeSlotStr(unavailableSlots || '');
     const normReqSlot = normalizeSlotStr(requiredSlotStr || '');
@@ -746,8 +718,8 @@ function importTeacherCSV(text) {
         );
       }
       slotsArr.forEach(s => {
-        if (!/^\d+-\d+$/.test(s)) {
-          errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 "${s}"의 형식이 올바르지 않습니다. (올바른 형식: 일차-교시, 예: 1-3)`);
+        if (!/^\d+_\d+$/.test(s)) {
+          errors.push(`${rowIdx + 2}행 (${name || '?'}): 고정시간 "${s}"의 형식이 올바르지 않습니다. (올바른 형식: 일차_교시, 예: 1_3)`);
         }
       });
       rolesArr.forEach(r => {
