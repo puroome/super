@@ -918,7 +918,7 @@ function validateAssignment(teachers, slots, slotNeeds) {
   const totalQuota = teachers.reduce((s, t) => s + (t.quota ?? 0), 0);
   const totalNeed = Object.values(slotNeeds).reduce((s, v) => s + v, 0);
   if (totalQuota !== totalNeed) {
-    errors.push(`배정할시간 합계(${totalQuota})와 총필요시간(${totalNeed})이 일치하지 않습니다.`);
+    errors.push(`배정시간 합계(${totalQuota})와 총필요시간(${totalNeed})이 일치하지 않습니다.`);
   }
   return { ok: errors.length === 0, errors };
 }

@@ -93,7 +93,7 @@ function renderTeacherList() {
   el.innerHTML = state.teachers.map((t, i) => `
     <tr>
       <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
-      <td><input type="number" value="${t.quota ?? 0}" onchange="updateTeacher(${i},'quota',+this.value)" style="width:50px"></td>
+      <td title="배정시간 자동채우기 버튼으로만 설정 가능">${t.quota ?? 0}</td>
       <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
       <td><input value="${t.forbiddenRooms ?? ''}" title="제외 고사실 (예: 101, 102)" onchange="updateTeacherField(${i},'forbiddenRooms',this)" style="width:90px"></td>
       <td><input value="${t.unavailableSlots ?? ''}" title="제외 시간: 일차_교시 (예: 1_1, 2_3)" onchange="updateTeacherField(${i},'unavailableSlots',this)" style="width:90px"></td>

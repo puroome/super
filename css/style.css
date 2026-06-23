@@ -170,7 +170,11 @@ input:focus { outline: 2px solid var(--accent); }
 
 /* ── 감독표 ── */
 .table-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
-.print-table { font-size: 11px; }
+/* ponytail: width:100%를 그대로 두면 칸이 좁아져 이름이 줄바꿈된다.
+   width:auto + nowrap이면 브라우저가 각 열을 "그 열에서 가장 긴 내용"에 맞춰 자동으로 넓혀준다.
+   표가 컨테이너보다 넓어지면 #table-wrap의 overflow-x:auto로 가로 스크롤된다. */
+.print-table { font-size: 11px; width: auto; table-layout: auto; }
+.print-table td { white-space: nowrap; }
 
 /* ── 로딩 ── */
 #loading {
