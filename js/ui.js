@@ -108,7 +108,7 @@ function renderTeacherList() {
   }
   el.innerHTML = state.teachers.map((t, i) => `
     <div class="teacher-card">
-      <input name="name" value="${t.name}" placeholder="이름" style="${t.name.length > 3 ? 'font-size:' + Math.max(8, 12 * 3 / t.name.length) + 'px' : ''}" onchange="updateTeacher(${i},'name',this.value);this.style.fontSize=this.value.length>3?Math.max(8,12*3/this.value.length)+'px':''">
+      <input name="name" value="${t.name}" placeholder="이름" style="${t.name.length > 3 ? 'font-size:' + Math.max(9.6, 14.4 * 3 / t.name.length) + 'px' : ''}" onchange="updateTeacher(${i},'name',this.value);this.style.fontSize=this.value.length>3?Math.max(9.6,14.4*3/this.value.length)+'px':''">
       <input name="workload" type="number" value="${t.prevWorkload > 0 ? t.prevWorkload : ''}" placeholder="" title="이전누적강도" min="0" step="1" pattern="[0-9]*" inputmode="numeric" onchange="updateTeacher(${i},'prevWorkload',+this.value)" onkeypress="return event.charCode>=48&&event.charCode<=57">
       <input name="forbidden" value="${t.forbiddenRooms ?? ''}" placeholder="" title="제외 고사실 (예: 101)" onchange="updateTeacherField(${i},'forbiddenRooms',this)">
       <button class="teacher-card-del" onclick="removeTeacher(${i})" title="삭제">×</button>
@@ -808,7 +808,7 @@ function renderAssignGrid() {
     ).join('');
     html += `<tr data-row="${i}">
       <td>${i}</td>
-      <td class="row-header-cell" style="${t.name.length > 3 ? 'font-size:' + Math.max(5.5, 9.5 * 3 / t.name.length) + 'px' : ''}">${t.name}</td>
+      <td class="row-header-cell" style="${t.name.length > 3 ? 'font-size:' + Math.max(7.15, 12.35 * 3 / t.name.length) + 'px' : ''}">${t.name}</td>
       <td>${t.forbiddenRooms || '-'}</td>
       ${slots.map((s, idx) => {
         const j = idx + 1;

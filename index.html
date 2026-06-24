@@ -114,7 +114,7 @@
           </thead>
           <tbody id="role-list"></tbody>
         </table>
-        <p class="csv-hint" style="margin-top:6px">업무강도: 정감독=100 고정 / 부감독은 상대적 값 입력 (예: 50)</p>
+        <p class="csv-hint" style="margin-top:6px"><b>부감독 비활성화</b> 버튼 클릭하면 부감독 유형이 없이 모두 정감독으로 배정됩니다.</p>
       </div>
 
     </div>
@@ -132,7 +132,7 @@
         <button class="btn-outline" onclick="openPrevWorkloadPicker(this)">📊 이전누적강도 불러오기</button>
         <button class="btn-danger btn-sm" onclick="resetSection('teachers')">🗑 초기화</button>
       </div>
-      <p class="csv-hint" style="margin-bottom:6px">제외 시간 / 고정(시간) 지정은 <b>자동배정 탭</b>에서 셀을 클릭·드래그해서 설정하세요.</p>
+      <p class="csv-hint" style="margin-bottom:6px">3개 칸 : 이름, 이전누적강도, 제외 고사실</p>
       <div style="overflow-x:auto;margin-top:8px">
         <div id="teacher-list-grid"></div>
       </div>
@@ -148,11 +148,9 @@
   <div class="card">
     <h2>📊 고사실별 배정감독수 설정</h2>
     <p style="margin-bottom:10px;color:#7a8599;font-size:12px">
-      고사실별 감독인원을 설정하세요. 셀을 더블클릭하면 배치/미배치가 전환됩니다.<br>
-      <b>셀 색상:</b> <span style="background:#eaf6ec;padding:1px 8px;border-radius:3px">옅은 녹색 = 정감독 배치</span>&nbsp;
-      <span style="background:#fff3cd;padding:1px 8px;border-radius:3px">옅은 노란색 = 부감독 배치</span>&nbsp;
-      흰색 = 미배치 (감독유형은 고사실 정보에서 자동 결정)
-    </p>
+      셀을 더블클릭하면 <b>배정/미배정</b>이 토글 전환됩니다. <span style="background:#eaf6ec;padding:1px 8px;border-radius:3px">정감독</span>&nbsp;
+      <span style="background:#fff3cd;padding:1px 8px;border-radius:3px">부감독</span>&nbsp;
+     </p>
     <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
       <label class="btn-csv-upload">
         CSV 올리기
@@ -174,11 +172,11 @@
     <div class="assign-actions">
       <button id="btn-run" class="btn-run" onclick="runAssign()">🚀 자동배정 실행</button>
       <button id="btn-exclude-mode" class="btn-outline btn-mode" onclick="toggleExcludeMode()">🚫 제외</button>
-      <button id="btn-fixed-mode" class="btn-outline btn-mode" onclick="toggleFixedMode()">📌 고정(시간)</button>
+      <button id="btn-fixed-mode" class="btn-outline btn-mode" onclick="toggleFixedMode()">📌 고정 (only 시간)</button>
       <button id="btn-swap" class="btn-outline" onclick="doSwap()" disabled>⇄ 선택 셀 교환</button>
       <button class="btn-danger" onclick="resetSection('assign')">🗑 초기화</button>
       <span style="color:#7a8599;font-size:11px">
-        [제외]/[고정(시간)] 모드 ON 후 칸을 클릭·드래그 &nbsp;|&nbsp; 고정(파란) 칸은 [고정(시간)] 모드에서 더블클릭하면 정/부 입력 &nbsp;|&nbsp; 평상시 셀 클릭: 선택(swap용), 더블클릭: 고정 토글
+        <b>원클릭</b> ( SWAP), <b>더블</b>클릭 (감독실과 시간 모두 고정)
       </span>
     </div>
     <div id="swap-history" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px"></div>

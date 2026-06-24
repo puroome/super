@@ -463,6 +463,14 @@ tbody .req-sticky-period {
 .print-table { font-size: 11px; width: auto; table-layout: auto; }
 .print-table td { white-space: nowrap; }
 
+/* 감독표 탭 화면에서 날짜별 감독 배정표 사이 간격만 추가
+   출력용 iframe/PDF/XLSX에는 적용되지 않도록 #table-wrap 안으로 제한한다. */
+#table-wrap .day-page + .day-page { margin-top: 28px; }
+
+@media print {
+  #table-wrap .day-page + .day-page { margin-top: 0 !important; }
+}
+
 /* ── 로딩 ── */
 #loading {
   display: none;
