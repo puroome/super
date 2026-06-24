@@ -99,44 +99,85 @@ function renderBasicTab() {
 }
 
 function renderTeacherList() {
-  const el = document.getElementById('teacher-list');
+  const el = document.getElementById('teacher-list-grid');
+  if (!el) return;
+  if (!state.teachers.length) {
+    el.innerHTML = '<p style="color:#999;font-size:12px;padding:4px">교사를 추가하거나 CSV로 업로드하세요.</p>';
+    return;
+  }
   el.innerHTML = state.teachers.map((t, i) => `
-    <tr>
-      <td><input value="${t.name}" onchange="updateTeacher(${i},'name',this.value)"></td>
-      <td><input type="number" value="${t.prevWorkload ?? 0}" onchange="updateTeacher(${i},'prevWorkload',+this.value)" style="width:60px"></td>
-      <td><input value="${t.forbiddenRooms ?? ''}" title="제외 고사실 (예: 101, 102)" onchange="updateTeacherField(${i},'forbiddenRooms',this)" style="width:90px"></td>
-      <td><button onclick="removeTeacher(${i})">삭제</button></td>
-    </tr>
+    <div class="teacher-card">
+      <input name="name" value="${t.name}" placeholder="이름" onchange="updateTeacher(${i},'name',this.value)">
+      <input name="workload" type="number" value="${t.prevWorkload > 0 ? t.prevWorkload : ''}" placeholder="" title="이전누적강도" min="0" step="1" pattern="[0-9]*" inputmode="numeric" onchange="updateTeacher(${i},'prevWorkload',+this.value)" onkeypress="return event.charCode>=48&&event.charCode<=57">
+      <input name="forbidden" value="${t.forbiddenRooms ?? ''}" placeholder="" title="제외 고사실 (예: 101)" onchange="updateTeacherField(${i},'forbiddenRooms',this)">
+      <button class="teacher-card-del" onclick="removeTeacher(${i})" title="삭제">×</button>
+    </div>
   `).join('');
 }
 
 function renderRoomList() {
   const el = document.getElementById('room-list');
+  if (!el) return;
   if (!state.roomMeta.length) {
-    el.innerHTML = '<p style="color:#999;font-size:12px">CSV로 고사실을 업로드하거나 직접 추가하세요.</p>';
-    return;
+    el.innerHTML = '<span style="font-size:12px;color:#e53935;font-weight:600">고사실 미등록</span>';
+  } else {
+    // 필요 감독교사 수 = 모든 날짜의 (선택된 고사실 수 × 교시 수) 합계
+    let totalNeeded = 0;
+    state.examDays.forEach((day, di) => {
+      const dayIdx = di + 1;
+      const rooms = state.examDayRooms[dayIdx] ?? [];
+      const periods = Math.max(0, day.endPeriod - day.startPeriod + 1);
+      totalNeeded += rooms.length * periods;
+    });
+
+    el.innerHTML = '<span style="font-size:12px;color:#388e3c;font-weight:600">✓ 고사실 등록</span>'
+      + `<span style="font-size:11px;color:#888;margin-left:6px">(${state.roomMeta.length}개)</span>`
+      + (totalNeeded > 0
+        ? `<span style="font-size:12px;color:#1976d2;font-weight:600;margin-left:16px">필요 감독교사 수</span>`
+          + `<span style="font-size:11px;color:#888;margin-left:6px">(${totalNeeded}명)</span>`
+        : '');
   }
-  el.innerHTML = state.roomMeta.map((m, i) => {
-    const gradeLabel = m.grade ? `${m.grade}학년` : '특별실';
-    const roleLabel = m.isAssistant
-      ? '<span style="color:#1976d2;font-size:11px">부감독</span>'
-      : '<span style="color:#388e3c;font-size:11px">정감독</span>';
-    return `<span class="tag" style="margin:2px">${m.name}
-      <span style="font-size:10px;color:#888;margin:0 2px">(${gradeLabel}·</span>${roleLabel}<span style="font-size:10px;color:#888">)</span>
-      <button onclick="removeRoom(${i})">×</button>
-    </span>`;
-  }).join('');
 }
 
 function renderRoleList() {
   const el = document.getElementById('role-list');
-  el.innerHTML = state.roles.map((r, i) => `
+  const chief  = state.roles[0]; // 정감독 (고정)
+  const assist = state.roles[1]; // 부감독 (옵션)
+
+  const assistActive = assist && assist.active !== false;
+  const assistWorkload = assist?.workload ?? '';
+
+  el.innerHTML = `
     <tr>
-      <td><input value="${r.name}" onchange="updateRole(${i},'name',this.value)"></td>
-      <td><input type="number" value="${r.workload ?? 0}" onchange="updateRole(${i},'workload',+this.value)" style="width:60px"></td>
-      <td><button onclick="removeRole(${i})">삭제</button></td>
+      <td><span style="font-weight:600;color:var(--text)">정감독</span></td>
+      <td><span style="font-weight:600;color:var(--text)">100</span></td>
+      <td style="color:#aaa;font-size:11px">고정</td>
     </tr>
-  `).join('');
+    <tr style="${assistActive ? '' : 'opacity:0.45'}">
+      <td><span style="font-weight:600;color:${assistActive ? 'var(--text)' : '#aaa'}">부감독</span></td>
+      <td>
+        <input type="number" value="${assistWorkload}"
+          placeholder=""
+          title="부감독 업무강도 (정감독=100 기준)"
+          style="width:60px;-moz-appearance:textfield"
+          ${assistActive ? '' : 'disabled'}
+          onchange="updateAssistWorkload(+this.value)"
+          onkeypress="return event.charCode>=48&&event.charCode<=57">
+      </td>
+      <td>
+        <button class="${assistActive ? 'btn-outline btn-sm' : 'btn-primary btn-sm'}"
+          onclick="toggleAssistRole()"
+          style="white-space:nowrap">
+          ${assistActive ? '부감독 비활성화' : '부감독 활성화'}
+        </button>
+      </td>
+    </tr>
+  `;
+
+  // 숫자 input 상하버튼 제거 (CSS 방어)
+  el.querySelectorAll('input[type="number"]').forEach(inp => {
+    inp.style.setProperty('-webkit-appearance', 'none');
+  });
 }
 
 function renderExamDayList() {
@@ -144,9 +185,39 @@ function renderExamDayList() {
   el.innerHTML = state.examDays.map((d, i) => {
     const dayIdx = i + 1;
     const selectedRooms = state.examDayRooms[dayIdx] ?? [];
+    const { gradeMap, special } = getRoomGroups();
+    const grades = Object.keys(gradeMap).sort();
+
+    // select 옵션 생성 — 첫 항목부터 바로 목록
+    let optionsHtml = '<option value="" disabled hidden selected></option>';
+    optionsHtml += `<option value="__group____all__">▶ 모든 고사실</option>`;
+    if (grades.length || special.length) optionsHtml += '<option disabled>──────────</option>';
+    // 학년 묶음
+    grades.forEach((g, gi) => {
+      if (gi > 0) optionsHtml += '<option disabled>──────────</option>';
+      optionsHtml += `<option value="__group__${g}">▶ ${g}학년 전체</option>`;
+      gradeMap[g].forEach(name => {
+        const disabled = selectedRooms.includes(name) ? ' disabled' : '';
+        optionsHtml += `<option value="${name}"${disabled}>${selectedRooms.includes(name) ? '　✓ ' : '　　'}${name}</option>`;
+      });
+    });
+    // 특별실
+    if (special.length) {
+      optionsHtml += '<option disabled>──────────</option>';
+      optionsHtml += `<option value="__group____special__">▶ 특별실 전체</option>`;
+      special.forEach(name => {
+        const disabled = selectedRooms.includes(name) ? ' disabled' : '';
+        optionsHtml += `<option value="${name}"${disabled}>${selectedRooms.includes(name) ? '　✓ ' : '　　'}${name}</option>`;
+      });
+    }
+
+    // 선택된 고사실 태그
     const tagsHtml = selectedRooms.map(r =>
       `<span class="tag">${r} <button onclick="removeExamDayRoom(${dayIdx},'${r.replace(/'/g,"\\'")}')">×</button></span>`
     ).join('');
+
+    const hasRooms = state.roomMeta.length > 0;
+
     return `
       <tr>
         <td><input type="date" value="${d.date}" onchange="updateExamDay(${i},'date',this.value)"></td>
@@ -154,11 +225,11 @@ function renderExamDayList() {
         <td><input type="number" value="${d.endPeriod}" onchange="updateExamDay(${i},'endPeriod',+this.value)" style="width:50px" min="1" max="9"></td>
         <td>
           <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+            ${hasRooms
+              ? `<select class="room-select" onchange="onRoomSelectChange(${dayIdx},this)">${optionsHtml}</select>`
+              : `<span style="font-size:11px;color:#aaa">고사실을 먼저 등록하세요</span>`
+            }
             ${tagsHtml}
-            <div style="position:relative;display:inline-block">
-              <button class="btn-outline btn-sm" onclick="toggleRoomDropdown(${dayIdx},this)">+ 고사실 선택 ▾</button>
-              <div id="room-dropdown-${dayIdx}" class="room-dropdown" style="display:none"></div>
-            </div>
           </div>
         </td>
         <td><button onclick="removeExamDay(${i})">삭제</button></td>
@@ -242,94 +313,34 @@ function getRoomGroups() {
   return { gradeMap, special };
 }
 
-function toggleRoomDropdown(dayIdx, btnEl) {
-  // 다른 드롭다운 모두 닫기
-  document.querySelectorAll('.room-dropdown').forEach(d => {
-    if (d.id !== `room-dropdown-${dayIdx}`) d.style.display = 'none';
-  });
-  const dd = document.getElementById(`room-dropdown-${dayIdx}`);
-  if (!dd) return;
-  if (dd.style.display === 'block') { dd.style.display = 'none'; return; }
+// select onChange 핸들러 — 개별 고사실 또는 학년 전체 선택 처리
+window.onRoomSelectChange = (dayIdx, selectEl) => {
+  const val = selectEl.value;
+  if (!val || val === '') return;
+  selectEl.value = ''; // 선택 후 즉시 초기화해서 "고사실 선택..." 으로 복귀
 
-  const selected = new Set(state.examDayRooms[dayIdx] ?? []);
-  const { gradeMap, special } = getRoomGroups();
-  const grades = Object.keys(gradeMap).sort();
+  if (!state.examDayRooms[dayIdx]) state.examDayRooms[dayIdx] = [];
 
-  let html = '';
-
-  // 학년 묶음 버튼
-  grades.forEach((g, gi) => {
-    if (gi > 0) html += `<div class="dd-sep"></div>`;
-    gradeMap[g].forEach(name => {
-      const active = selected.has(name) ? ' dd-active' : '';
-      html += `<div class="dd-item${active}" onclick="addExamDayRoom(${dayIdx},'${name.replace(/'/g,"\\'")}')">
-        ${name}${selected.has(name) ? ' ✓' : ''}
-      </div>`;
-    });
-  });
-
-  // 특별실
-  if (special.length) {
-    html += `<div class="dd-sep"></div>`;
-    special.forEach(name => {
-      const active = selected.has(name) ? ' dd-active' : '';
-      html += `<div class="dd-item${active}" onclick="addExamDayRoom(${dayIdx},'${name.replace(/'/g,"\\'")}')">
-        ${name}${selected.has(name) ? ' ✓' : ''}
-      </div>`;
-    });
-  }
-
-  // 구분선 후 학년 전체 묶음 버튼
-  if (grades.length || special.length) {
-    html += `<div class="dd-sep"></div>`;
-    grades.forEach(g => {
-      html += `<div class="dd-item dd-group" onclick="addExamDayRoomGroup(${dayIdx},'${g}')">
-        ${g}학년 전체
-      </div>`;
-    });
-    if (special.length) {
-      html += `<div class="dd-item dd-group" onclick="addExamDayRoomGroup(${dayIdx},'__special__')">
-        특별실 전체
-      </div>`;
+  if (val.startsWith('__group__')) {
+    const grade = val.replace('__group__', '');
+    const { gradeMap, special } = getRoomGroups();
+    let toAdd;
+    if (grade === '__all__') {
+      toAdd = state.roomMeta.map(m => m.name);
+    } else if (grade === '__special__') {
+      toAdd = special;
+    } else {
+      toAdd = gradeMap[grade] ?? [];
     }
+    toAdd.forEach(name => {
+      if (!state.examDayRooms[dayIdx].includes(name)) state.examDayRooms[dayIdx].push(name);
+    });
+  } else {
+    if (!state.examDayRooms[dayIdx].includes(val)) state.examDayRooms[dayIdx].push(val);
   }
 
-  dd.innerHTML = html || '<div style="padding:8px;color:#999">고사실 목록이 없습니다</div>';
-  dd.style.display = 'block';
-
-  // 클릭 외부 시 닫기
-  setTimeout(() => {
-    const handler = (e) => {
-      if (!dd.contains(e.target) && e.target !== btnEl) {
-        dd.style.display = 'none';
-        document.removeEventListener('click', handler);
-      }
-    };
-    document.addEventListener('click', handler);
-  }, 0);
-}
-
-window.addExamDayRoom = (dayIdx, roomName) => {
-  if (!state.examDayRooms[dayIdx]) state.examDayRooms[dayIdx] = [];
-  if (!state.examDayRooms[dayIdx].includes(roomName)) {
-    state.examDayRooms[dayIdx].push(roomName);
-  }
   autoFillRequirements();
-  renderExamDayList();
-  // 드롭다운 유지: 다시 열기
-  const btn = document.querySelector(`#examday-list tr:nth-child(${dayIdx}) .btn-outline.btn-sm`);
-  const dd = document.getElementById(`room-dropdown-${dayIdx}`);
-  if (dd) dd.style.display = 'none'; // 태그 재렌더 후 드롭다운 닫힘 자연스럽게
-};
-
-window.addExamDayRoomGroup = (dayIdx, grade) => {
-  if (!state.examDayRooms[dayIdx]) state.examDayRooms[dayIdx] = [];
-  const { gradeMap, special } = getRoomGroups();
-  const toAdd = grade === '__special__' ? special : (gradeMap[grade] ?? []);
-  toAdd.forEach(name => {
-    if (!state.examDayRooms[dayIdx].includes(name)) state.examDayRooms[dayIdx].push(name);
-  });
-  autoFillRequirements();
+  renderRoomList();
   renderExamDayList();
 };
 
@@ -337,6 +348,7 @@ window.removeExamDayRoom = (dayIdx, roomName) => {
   if (!state.examDayRooms[dayIdx]) return;
   state.examDayRooms[dayIdx] = state.examDayRooms[dayIdx].filter(r => r !== roomName);
   autoFillRequirements();
+  renderRoomList();
   renderExamDayList();
 };
 
@@ -346,8 +358,13 @@ window.removeExamDayRoom = (dayIdx, roomName) => {
 
 function autoFillRequirements() {
   const role1Idx = state.roles.findIndex(r => r.name === '정감독') + 1;
-  const role2Idx = state.roles.findIndex(r => r.name === '부감독') + 1;
-  if (!role1Idx || !role2Idx) return; // 보직이 아직 없으면 스킵
+  if (!role1Idx) return; // 정감독이 없으면 스킵
+
+  // 부감독: active이고 workload > 0일 때만 유효
+  const assistRole = state.roles.find(r => r.name === '부감독');
+  const role2Idx = (assistRole && assistRole.active !== false && (assistRole.workload ?? 0) > 0)
+    ? state.roles.findIndex(r => r.name === '부감독') + 1
+    : 0;
 
   const metaMap = {};
   state.roomMeta.forEach(m => { metaMap[m.name] = m; });
@@ -359,7 +376,8 @@ function autoFillRequirements() {
     for (let p = day.startPeriod; p <= day.endPeriod; p++) {
       rooms.forEach(roomName => {
         const meta = metaMap[roomName];
-        const roleIdx = meta?.isAssistant ? role2Idx : role1Idx;
+        // 부감독 고사실인데 부감독이 비활성/없으면 → 정감독으로 대체
+        const roleIdx = (meta?.isAssistant && role2Idx) ? role2Idx : role1Idx;
         newReqs.push({ dayIdx, period: p, roleIdx, roomName, count: 1 });
       });
     }
@@ -661,39 +679,45 @@ function renderAssignGrid() {
   const fixedBtn = document.getElementById('btn-fixed-mode');
   if (fixedBtn) fixedBtn.classList.toggle('mode-on', state.gridMode === 'fixed');
 
-  let html = `<div class="grid-scroll"><table class="assign-grid">
+  let html = `<div class="grid-scroll" id="assign-grid-scroll"><table class="assign-grid">
   <thead>
     <tr>
       <th>순번</th><th>이름</th><th>제외 고사실</th>
-      ${slots.map((s) => {
+      ${slots.map((s, idx) => {
         const day = state.examDays[s.dayIdx - 1];
-        return `<th class="slot-header">${formatDate(day?.date)}<br>${s.period}교시</th>`;
+        return `<th class="slot-header" data-col="${idx + 3}">${formatDate(day?.date)}<br>${s.period}교시</th>`;
       }).join('')}
-      <th>총감독</th><th>누적강도</th>
-      ${state.roles.map(r => `<th>${r.name}</th>`).join('')}
+      <th class="sticky-right">총감독</th><th class="sticky-right">누적강도</th>
+      ${state.roles.map(r => `<th class="sticky-right">${r.name}</th>`).join('')}
     </tr>
   </thead><tbody>`;
 
+  // 오른쪽 고정 열 수: 총감독 + 누적강도 + 보직 수
+  const rightFixedCount = 2 + state.roles.length;
+
   for (let i = 1; i <= tCount; i++) {
     const t = state.teachers[i - 1];
-    html += `<tr>
+    const roleCells = state.roles.map((_, ri) =>
+      `<td class="sticky-right">${state.roleCounts[i - 1]?.counts?.[ri + 1] ?? 0}</td>`
+    ).join('');
+    html += `<tr data-row="${i}">
       <td>${i}</td>
-      <td>${t.name}</td>
+      <td class="row-header-cell">${t.name}</td>
       <td>${t.forbiddenRooms || '-'}</td>
       ${slots.map((s, idx) => {
         const j = idx + 1;
         const key = slotKey(s.dayIdx, s.period);
         const { bg, text, title } = computeCellVisual(i, j, key);
         const selClass = state.selectedCells.some(c => c.i === i && c.j === j) ? ' selected-cell' : '';
-        return `<td class="grid-cell${selClass}" data-i="${i}" data-j="${j}" data-key="${key}" style="background:${bg}"
+        return `<td class="grid-cell${selClass}" data-i="${i}" data-j="${j}" data-col="${idx + 3}" data-key="${key}" style="background:${bg}"
           onclick="onCellClick(${i},${j})"
           ondblclick="onCellDblClick(${i},${j})"
           title="${title}"
         >${text}</td>`;
       }).join('')}
-      <td>${state.roleCounts[i - 1]?.counts?.reduce((s, v) => s + v, 0) ?? 0}</td>
-      <td>${Math.round(state.workload[i] ?? 0)}</td>
-      ${state.roles.map((_, ri) => `<td>${state.roleCounts[i - 1]?.counts?.[ri + 1] ?? 0}</td>`).join('')}
+      <td class="sticky-right">${state.roleCounts[i - 1]?.counts?.reduce((s, v) => s + v, 0) ?? 0}</td>
+      <td class="sticky-right">${Math.round(state.workload[i] ?? 0)}</td>
+      ${roleCells}
     </tr>`;
   }
 
@@ -705,6 +729,130 @@ function renderAssignGrid() {
   if (histEl) histEl.innerHTML = (state.swapHistory ?? [])
     .map((h, i) => `<span class="tag">${h.label} <button onclick="undoSwap(${i})">×</button></span>`)
     .join('');
+
+  // ── sticky-right 열 right 값 동적 계산 ──────────────────────────────
+  // 렌더 직후 각 열 너비를 읽어서 right 값을 역순으로 누적 적용
+  requestAnimationFrame(() => {
+    const gridEl = document.querySelector('#assign-grid-scroll .assign-grid');
+    if (!gridEl) return;
+    const headerCells = Array.from(gridEl.querySelectorAll('thead tr th'));
+    const stickyRightThs = [];
+    for (let k = headerCells.length - 1; k >= 0; k--) {
+      if (headerCells[k].classList.contains('sticky-right')) stickyRightThs.unshift(headerCells[k]);
+      else break;
+    }
+    let accumulated = 0;
+    for (let k = stickyRightThs.length - 1; k >= 0; k--) {
+      const th = stickyRightThs[k];
+      const w = th.offsetWidth;
+      th.style.right = accumulated + 'px';
+      // 같은 열 인덱스의 모든 td에도 적용
+      const colIdx = Array.from(headerCells).indexOf(th);
+      gridEl.querySelectorAll(`tbody tr`).forEach(tr => {
+        const td = tr.cells[colIdx];
+        if (td) { td.style.right = accumulated + 'px'; }
+      });
+      accumulated += w;
+    }
+  });
+
+  // ── 마우스휠 내부 스크롤 ──────────────────────────────────────────────
+  const scrollEl = document.getElementById('assign-grid-scroll');
+  if (scrollEl) {
+    scrollEl.setAttribute('tabindex', '0'); // 키보드 포커스 받을 수 있게
+    scrollEl.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      scrollEl.scrollTop += e.deltaY;
+      scrollEl.scrollLeft += e.deltaX;
+    }, { passive: false });
+
+    // 키보드 상하좌우 스크롤
+    scrollEl.addEventListener('keydown', (e) => {
+      const step = 40;
+      if (e.key === 'ArrowDown')  { e.preventDefault(); scrollEl.scrollTop  += step; }
+      if (e.key === 'ArrowUp')    { e.preventDefault(); scrollEl.scrollTop  -= step; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); scrollEl.scrollLeft += step; }
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); scrollEl.scrollLeft -= step; }
+    });
+
+    // 그리드 위에 마우스 들어오면 키보드 포커스 자동 이동
+    scrollEl.addEventListener('mouseenter', () => scrollEl.focus({ preventScroll: true }));
+  }
+
+  // ── 포커스셀: 마우스 호버 시 행·열 헤더 강조 + 바깥 테두리 ──────────
+  const table = scrollEl?.querySelector('.assign-grid');
+  if (!table) return;
+
+  const headerRow = table.querySelector('thead tr');
+  const allColHeaders = headerRow ? Array.from(headerRow.querySelectorAll('th')) : [];
+
+  let lastFocusRow = -1;
+  let lastFocusCol = -1;
+
+  table.addEventListener('mousemove', (e) => {
+    // th 또는 td 모두 대응
+    const cell = e.target.closest('td, th');
+    if (!cell || cell.tagName === 'TH' && cell.closest('thead')) {
+      // 헤더 행 위 → 초기화
+      if (lastFocusRow !== -1 || lastFocusCol !== -1) clearFocus(table);
+      lastFocusRow = -1; lastFocusCol = -1;
+      return;
+    }
+
+    // 현재 행 인덱스(1-based) 구하기
+    const tr = cell.closest('tr');
+    const row = tr ? parseInt(tr.dataset.row ?? -1) : -1;
+    if (row < 1) { clearFocus(table); lastFocusRow = -1; lastFocusCol = -1; return; }
+
+    // 현재 열 인덱스(cellIndex) 구하기 — 모든 td 기준
+    const col = cell.cellIndex;
+
+    // 순번(0)·이름(1) 열은 포커스 비활성
+    if (col <= 1) { clearFocus(table); lastFocusRow = -1; lastFocusCol = -1; return; }
+
+    if (row === lastFocusRow && col === lastFocusCol) return;
+    lastFocusRow = row;
+    lastFocusCol = col;
+    applyFocus(table, allColHeaders, row, col, tCount, slots.length);
+  });
+
+  table.addEventListener('mouseleave', () => {
+    clearFocus(table);
+    lastFocusRow = -1; lastFocusCol = -1;
+  });
+}
+
+function applyFocus(table, allColHeaders, focusRow, focusCol, tCount, sCount) {
+  clearFocus(table);
+
+  // ── 열 헤더(1행) 강조 ──
+  const colTh = allColHeaders[focusCol];
+  if (colTh) colTh.classList.add('focus-col-header');
+
+  // ── 해당 행의 이름 td(2번째 열, cellIndex=1) 강조 ──
+  const targetRow = table.querySelector(`tr[data-row="${focusRow}"]`);
+  if (targetRow) {
+    const nameTd = targetRow.cells[1];
+    if (nameTd) nameTd.classList.add('focus-row-header');
+  }
+
+  // ── 행 강조: 해당 행의 모든 td에 top/bottom 테두리 클래스 ──
+  if (targetRow) {
+    Array.from(targetRow.cells).forEach((td, ci) => {
+      td.classList.add('focus-row');
+    });
+  }
+
+  // ── 열 강조: 모든 행의 focusCol번째 td에 left/right 테두리 클래스 ──
+  table.querySelectorAll(`tbody tr[data-row]`).forEach(tr => {
+    const td = tr.cells[focusCol];
+    if (td) td.classList.add('focus-col');
+  });
+}
+
+function clearFocus(table) {
+  table.querySelectorAll('.focus-col-header, .focus-row-header, .focus-row, .focus-col')
+    .forEach(el => el.classList.remove('focus-col-header', 'focus-row-header', 'focus-row', 'focus-col'));
 }
 
 function onCellClick(i, j) {
@@ -917,7 +1065,9 @@ async function loadAll() {
     state.teachers = (basic.teachers ?? []).map(normalizeTeacherStrings);
     state.rooms = basic.rooms ?? [];
     state.roomMeta = basic.roomMeta ?? state.rooms.map(name => ({ name, grade: null, isAssistant: false }));
-    state.roles = basic.roles ?? [];
+    state.roles = basic.roles?.length
+      ? basic.roles
+      : [{ name: '정감독', workload: 100 }, { name: '부감독', workload: 50, active: true }];
     state.examDays = basic.examDays ?? [];
     state.examDayRooms = basic.examDayRooms ?? {};
     state.requirements = reqs.requirements ?? [];
@@ -1118,7 +1268,8 @@ function resetSection(section) {
     Object.keys(state.examDayRooms).forEach(d => { state.examDayRooms[d] = []; });
     pruneStaleRoomRequirements(); renderRoomList(); renderExamDayList();
   } else if (section === 'roles') {
-    state.roles = []; state.roomRequirements = []; syncRequirements(); renderRoleList();
+    state.roles = [{ name: '정감독', workload: 100 }, { name: '부감독', workload: 50, active: true }];
+    state.roomRequirements = []; syncRequirements(); renderRoleList();
   } else if (section === 'assign') {
     state.data = null; state.fixedCells = {}; state.workload = []; state.roleCounts = [];
     state.slots = []; state.selectedCells = []; state.swapHistory = [];
@@ -1282,7 +1433,7 @@ function downloadCSV(content, filename) {
 window.updateTeacher = (idx, key, val) => { state.teachers[idx][key] = val; };
 window.updateTeacherField = updateTeacherField;
 window.updateRole = (idx, key, val) => { state.roles[idx][key] = val; };
-window.updateExamDay = (idx, key, val) => { state.examDays[idx][key] = val; };
+window.updateExamDay = (idx, key, val) => { state.examDays[idx][key] = val; renderRoomList(); };
 window.updateRoomReq = updateRoomReq;
 window.onCellClick = onCellClick;
 window.onCellDblClick = onCellDblClick;
@@ -1359,6 +1510,20 @@ window.addRoom = () => {
   state.roomMeta.push({ name, grade: null, isAssistant: false });
   renderRoomList();
 };
+window.updateAssistWorkload = (val) => {
+  if (state.roles[1]) {
+    state.roles[1].workload = val;
+    autoFillRequirements();
+  }
+};
+
+window.toggleAssistRole = () => {
+  if (!state.roles[1]) return;
+  state.roles[1].active = state.roles[1].active === false ? true : false;
+  autoFillRequirements();
+  renderRoleList();
+};
+
 window.addRole = () => {
   state.roles.push({ name: '', workload: 0 });
   renderRoleList();
@@ -1382,7 +1547,6 @@ window.runAssign = runAssign;
 window.doSwap = doSwap;
 window.downloadTeacherCSVTemplate = downloadTeacherCSVTemplate;
 window.downloadRoomCSVTemplate = downloadRoomCSVTemplate;
-window.toggleRoomDropdown = toggleRoomDropdown;
 
 
 function fullTableParams() {

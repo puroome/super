@@ -78,9 +78,9 @@
       <p class="csv-hint" style="margin-bottom:8px">고사실 CSV 열: <b>고사실명, 학년(1·2·3, 비우면 특별실), 부감독(1이면 부감독, 비우면 정감독)</b></p>
       <div id="room-list" style="margin-bottom:10px"></div>
       <div style="overflow-x:auto">
-        <table>
+        <table class="examday-table">
           <thead>
-            <tr><th>날짜</th><th>시작교시</th><th>종료교시</th><th style="min-width:320px">해당일 고사실</th><th></th></tr>
+            <tr><th>날짜</th><th>시작교시</th><th>종료교시</th><th>해당일 고사실</th><th>삭제</th></tr>
           </thead>
           <tbody id="examday-list"></tbody>
         </table>
@@ -95,37 +95,24 @@
           <input type="file" accept=".csv" onchange="handleTeacherCSV(event)" style="display:none">
         </label>
         <button class="btn-outline" onclick="downloadTeacherCSVTemplate()">⬇ CSV양식 받기</button>
+        <button class="btn-outline" onclick="openPrevWorkloadPicker(this)">📊 이전누적강도 불러오기</button>
         <button class="btn-danger btn-sm" onclick="resetSection('teachers')">🗑 초기화</button>
       </div>
       <p class="csv-hint" style="margin-bottom:6px">제외 시간 / 고정(시간) 지정은 <b>자동배정 탭</b>에서 셀을 클릭·드래그해서 설정하세요.</p>
       <div style="overflow-x:auto;margin-top:8px">
-        <table>
-          <thead>
-            <tr>
-              <th>이름</th>
-              <th style="cursor:pointer;user-select:none" onclick="openPrevWorkloadPicker(this)">이전누적강도 ▾</th>
-              <th>제외 고사실</th>
-              <th>삭제</th>
-            </tr>
-          </thead>
-          <tbody id="teacher-list"></tbody>
-        </table>
+        <div id="teacher-list-grid"></div>
       </div>
     </div>
 
     <div class="card">
       <h2>📌 보직 및 업무강도</h2>
-      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-        <button class="btn-primary" onclick="addRole()">+ 보직 추가</button>
-        <button class="btn-danger btn-sm" onclick="resetSection('roles')">🗑 초기화</button>
-      </div>
       <table>
         <thead>
           <tr><th>보직명</th><th>업무강도</th><th></th></tr>
         </thead>
         <tbody id="role-list"></tbody>
       </table>
-      <p class="csv-hint" style="margin-top:6px">업무강도: 정감독=100, 부감독=50, 대기실=10 등 (숫자 자유 설정)</p>
+      <p class="csv-hint" style="margin-top:6px">업무강도: 정감독=100 고정 / 부감독은 상대적 값 입력 (예: 50)</p>
     </div>
 
   </div>

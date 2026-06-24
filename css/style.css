@@ -134,6 +134,54 @@ input:focus { outline: 2px solid var(--accent); }
   gap: 14px;
 }
 
+/* ── 시험일 및 고사실 테이블 — 열 너비 고정 ── */
+.examday-table { table-layout: fixed; width: 100%; }
+.examday-table th:nth-child(1),
+.examday-table td:nth-child(1) { width: 140px; }          /* 날짜 */
+.examday-table th:nth-child(2),
+.examday-table td:nth-child(2) { width: 72px; }           /* 시작교시 */
+.examday-table th:nth-child(3),
+.examday-table td:nth-child(3) { width: 72px; }           /* 종료교시 */
+.examday-table th:nth-child(4),
+.examday-table td:nth-child(4) { width: auto; }           /* 고사실 — 나머지 전체 */
+.examday-table th:nth-child(5),
+.examday-table td:nth-child(5) { width: 72px; }           /* 삭제 */
+
+/* ── 감독교사 6단 그리드 ── */
+#teacher-list-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+.teacher-card {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.teacher-card input {
+  width: 70px;
+  border: 1px solid #e0e4ef;
+  border-radius: 8px;
+  background: #f4f6fa;
+  padding: 3px 6px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+}
+.teacher-card input[type="number"] { -moz-appearance: textfield; }
+.teacher-card input[type="number"]::-webkit-inner-spin-button,
+.teacher-card input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.teacher-card-actions { margin-left: auto; flex-shrink: 0; }
+.teacher-card-actions .btn-danger { opacity: 0.5; }
+.teacher-card-actions .btn-danger:hover { opacity: 1; }
+@media (max-width: 1400px) { #teacher-list-grid { grid-template-columns: repeat(5, 1fr); } }
+@media (max-width: 1150px) { #teacher-list-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 900px)  { #teacher-list-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 650px)  { #teacher-list-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 400px)  { #teacher-list-grid { grid-template-columns: 1fr; } }
+
 .tag {
   display: inline-flex;
   align-items: center;
@@ -151,11 +199,79 @@ input:focus { outline: 2px solid var(--accent); }
 .req-table td input { width: 40px; padding: 2px 4px; text-align: center; }
 
 /* ── 배정 그리드 ── */
-.grid-scroll { overflow-x: auto; }
-.assign-grid { font-size: 11px; white-space: nowrap; }
-.assign-grid th { font-size: 11px; padding: 4px 5px; }
+.grid-scroll {
+  overflow: auto;
+  max-height: calc(100vh - 220px);
+  position: relative;
+  cursor: default;
+}
+.assign-grid { font-size: 11px; white-space: nowrap; border-collapse: separate; border-spacing: 0; }
+.assign-grid th { font-size: 11px; padding: 4px 5px; position: sticky; top: 0; z-index: 3; }
 .assign-grid td { padding: 3px 4px; min-width: 38px; }
 .assign-grid .slot-header { font-size: 10px; }
+
+/* 1열(순번) 고정 */
+.assign-grid th:nth-child(1),
+.assign-grid td:nth-child(1) {
+  position: sticky; left: 0; z-index: 2;
+  background: var(--accent);
+  color: white;
+  border-right: 1px solid #8899bb;
+}
+.assign-grid td:nth-child(1) { background: #f8f9fc; color: var(--text); }
+.assign-grid tr:nth-child(even) td:nth-child(1) { background: #eef0f8; }
+
+/* 2열(이름) 고정 */
+.assign-grid th:nth-child(2),
+.assign-grid td:nth-child(2) {
+  position: sticky; left: 30px; z-index: 2;
+  background: var(--accent);
+  border-right: 2px solid #6070a0;
+}
+.assign-grid td:nth-child(2) { background: #f8f9fc; color: var(--text); }
+.assign-grid tr:nth-child(even) td:nth-child(2) { background: #eef0f8; }
+
+/* 헤더+고정열 교차점 */
+.assign-grid th:nth-child(1),
+.assign-grid th:nth-child(2) { z-index: 4; }
+
+#role-list input[type="number"] { -moz-appearance: textfield; }
+#role-list input[type="number"]::-webkit-inner-spin-button,
+#role-list input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+/* 오른쪽 고정 열 */
+.assign-grid th.sticky-right,
+.assign-grid td.sticky-right {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--accent);
+  color: white;
+}
+.assign-grid td.sticky-right {
+  background: #f8f9fc;
+  color: var(--text);
+  border-left: 2px solid #8899bb;
+}
+.assign-grid tr:nth-child(even) td.sticky-right { background: #eef0f8; }
+.assign-grid th.sticky-right { z-index: 4; border-left: 2px solid #6070a0; }
+.assign-grid th.focus-col-header { background: #e6c200 !important; color: #2c3a50 !important; }
+.assign-grid td.focus-col-header { background: #e6c200 !important; color: #2c3a50 !important; }
+.assign-grid th.focus-row-header { background: #e6c200 !important; color: #2c3a50 !important; }
+.assign-grid td.focus-row-header { background: #e6c200 !important; color: #2c3a50 !important; }
+
+/* 포커스 행 — 위아래 바깥 테두리만 (box-shadow로 레이아웃 영향 없음) */
+.assign-grid td.focus-row { box-shadow: 0 -2px 0 0 #e6c200 inset, 0 2px 0 0 #e6c200 inset; }
+
+/* 포커스 열 — 좌우 바깥 테두리만 */
+.assign-grid td.focus-col { box-shadow: -2px 0 0 0 #e6c200 inset, 2px 0 0 0 #e6c200 inset; }
+
+/* 포커스 행+열 교차점 — 네 방향 모두 */
+.assign-grid td.focus-row.focus-col {
+  box-shadow: 0 -2px 0 0 #e6c200 inset, 0 2px 0 0 #e6c200 inset,
+              -2px 0 0 0 #e6c200 inset, 2px 0 0 0 #e6c200 inset;
+  position: relative; z-index: 1;
+}
 
 .grid-cell {
   cursor: pointer;
@@ -289,3 +405,50 @@ input:focus { outline: 2px solid var(--accent); }
   border-radius: 4px;
 }
 .output-menu button:hover { background: #f0f4fa; opacity: 1; }
+
+/* ── 고사실 선택 select ── */
+.room-select {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--card);
+  cursor: pointer;
+  min-width: 130px;
+}
+.room-select:focus { outline: none; border-color: var(--accent); }
+
+
+.room-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 1100;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.13);
+  min-width: 160px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.dd-item {
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.dd-item:hover { background: #f0f4fa; }
+.dd-item.dd-active { color: #1976d2; }
+.dd-item.dd-group {
+  font-weight: 600;
+  color: var(--accent-dark);
+}
+.dd-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
