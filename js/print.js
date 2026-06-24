@@ -443,6 +443,9 @@ function printElement(html, title = '감독표', isFullTable = false) {
       page-break-inside: avoid;
       width: 100%;
     }
+    @media screen {
+      .day-page + .day-page { margin-top: 28px; }
+    }
     .day-page:last-child { page-break-after: auto; }
     .day-title {
       font-size: 13px;

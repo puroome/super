@@ -29,7 +29,7 @@ const state = {
   roomMeta: [],    // [{ name, grade, isAssistant }] — CSV 3열 구조
   roles: [],
   examDays: [],
-  examDayRooms: {}, // { dayIdx(1-based): [roomName, ...] } — 날짜별 선택된 고사실
+  // examDayRooms 제거됨 — 배정설정 탭에서 직접 관리
   requirements: [],
   roomRequirements: [],
   data: null,
@@ -60,9 +60,10 @@ function initTabs() {
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(btn.dataset.tab).classList.add('active');
+      if (btn.dataset.tab === 'tab-req') renderRequirementsTab();
       if (btn.dataset.tab === 'tab-assign') { seedGridFromTeacherText(); renderAssignGrid(); }
       if (btn.dataset.tab === 'tab-table') renderSupervisorTable();
-      // (배정설정 탭 제거됨 — roomRequirements는 내부적으로 자동 생성)
+      // (배정설정 탭 복원됨 — roomRequirements는 CSV 업로드 또는 화면 편집으로 설정)
     });
   });
 }
@@ -107,7 +108,7 @@ function renderTeacherList() {
   }
   el.innerHTML = state.teachers.map((t, i) => `
     <div class="teacher-card">
-      <input name="name" value="${t.name}" placeholder="이름" onchange="updateTeacher(${i},'name',this.value)">
+      <input name="name" value="${t.name}" placeholder="이름" style="${t.name.length > 3 ? 'font-size:' + Math.max(8, 12 * 3 / t.name.length) + 'px' : ''}" onchange="updateTeacher(${i},'name',this.value);this.style.fontSize=this.value.length>3?Math.max(8,12*3/this.value.length)+'px':''">
       <input name="workload" type="number" value="${t.prevWorkload > 0 ? t.prevWorkload : ''}" placeholder="" title="이전누적강도" min="0" step="1" pattern="[0-9]*" inputmode="numeric" onchange="updateTeacher(${i},'prevWorkload',+this.value)" onkeypress="return event.charCode>=48&&event.charCode<=57">
       <input name="forbidden" value="${t.forbiddenRooms ?? ''}" placeholder="" title="제외 고사실 (예: 101)" onchange="updateTeacherField(${i},'forbiddenRooms',this)">
       <button class="teacher-card-del" onclick="removeTeacher(${i})" title="삭제">×</button>
@@ -121,21 +122,8 @@ function renderRoomList() {
   if (!state.roomMeta.length) {
     el.innerHTML = '<span style="font-size:12px;color:#e53935;font-weight:600">고사실 미등록</span>';
   } else {
-    // 필요 감독교사 수 = 모든 날짜의 (선택된 고사실 수 × 교시 수) 합계
-    let totalNeeded = 0;
-    state.examDays.forEach((day, di) => {
-      const dayIdx = di + 1;
-      const rooms = state.examDayRooms[dayIdx] ?? [];
-      const periods = Math.max(0, day.endPeriod - day.startPeriod + 1);
-      totalNeeded += rooms.length * periods;
-    });
-
     el.innerHTML = '<span style="font-size:12px;color:#388e3c;font-weight:600">✓ 고사실 등록</span>'
-      + `<span style="font-size:11px;color:#888;margin-left:6px">(${state.roomMeta.length}개)</span>`
-      + (totalNeeded > 0
-        ? `<span style="font-size:12px;color:#1976d2;font-weight:600;margin-left:16px">필요 감독교사 수</span>`
-          + `<span style="font-size:11px;color:#888;margin-left:6px">(${totalNeeded}명)</span>`
-        : '');
+      + `<span style="font-size:11px;color:#888;margin-left:6px">(${state.roomMeta.length}개)</span>`;
   }
 }
 
@@ -159,7 +147,7 @@ function renderRoleList() {
         <input type="number" value="${assistWorkload}"
           placeholder=""
           title="부감독 업무강도 (정감독=100 기준)"
-          style="width:60px;-moz-appearance:textfield"
+          style="width:60px;-moz-appearance:textfield;text-align:center"
           ${assistActive ? '' : 'disabled'}
           onchange="updateAssistWorkload(+this.value)"
           onkeypress="return event.charCode>=48&&event.charCode<=57">
@@ -183,55 +171,11 @@ function renderRoleList() {
 function renderExamDayList() {
   const el = document.getElementById('examday-list');
   el.innerHTML = state.examDays.map((d, i) => {
-    const dayIdx = i + 1;
-    const selectedRooms = state.examDayRooms[dayIdx] ?? [];
-    const { gradeMap, special } = getRoomGroups();
-    const grades = Object.keys(gradeMap).sort();
-
-    // select 옵션 생성 — 첫 항목부터 바로 목록
-    let optionsHtml = '<option value="" disabled hidden selected></option>';
-    optionsHtml += `<option value="__group____all__">▶ 모든 고사실</option>`;
-    if (grades.length || special.length) optionsHtml += '<option disabled>──────────</option>';
-    // 학년 묶음
-    grades.forEach((g, gi) => {
-      if (gi > 0) optionsHtml += '<option disabled>──────────</option>';
-      optionsHtml += `<option value="__group__${g}">▶ ${g}학년 전체</option>`;
-      gradeMap[g].forEach(name => {
-        const disabled = selectedRooms.includes(name) ? ' disabled' : '';
-        optionsHtml += `<option value="${name}"${disabled}>${selectedRooms.includes(name) ? '　✓ ' : '　　'}${name}</option>`;
-      });
-    });
-    // 특별실
-    if (special.length) {
-      optionsHtml += '<option disabled>──────────</option>';
-      optionsHtml += `<option value="__group____special__">▶ 특별실 전체</option>`;
-      special.forEach(name => {
-        const disabled = selectedRooms.includes(name) ? ' disabled' : '';
-        optionsHtml += `<option value="${name}"${disabled}>${selectedRooms.includes(name) ? '　✓ ' : '　　'}${name}</option>`;
-      });
-    }
-
-    // 선택된 고사실 태그
-    const tagsHtml = selectedRooms.map(r =>
-      `<span class="tag">${r} <button onclick="removeExamDayRoom(${dayIdx},'${r.replace(/'/g,"\\'")}')">×</button></span>`
-    ).join('');
-
-    const hasRooms = state.roomMeta.length > 0;
-
     return `
       <tr>
         <td><input type="date" value="${d.date}" onchange="updateExamDay(${i},'date',this.value)"></td>
-        <td><input type="number" value="${d.startPeriod}" onchange="updateExamDay(${i},'startPeriod',+this.value)" style="width:50px" min="1" max="9"></td>
-        <td><input type="number" value="${d.endPeriod}" onchange="updateExamDay(${i},'endPeriod',+this.value)" style="width:50px" min="1" max="9"></td>
-        <td>
-          <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
-            ${hasRooms
-              ? `<select class="room-select" onchange="onRoomSelectChange(${dayIdx},this)">${optionsHtml}</select>`
-              : `<span style="font-size:11px;color:#aaa">고사실을 먼저 등록하세요</span>`
-            }
-            ${tagsHtml}
-          </div>
-        </td>
+        <td><input type="number" value="${d.startPeriod}" onchange="updateExamDay(${i},'startPeriod',+this.value)" style="width:44px;text-align:center;-webkit-appearance:none;-moz-appearance:textfield" min="1" max="9"></td>
+        <td><input type="number" value="${d.endPeriod}" onchange="updateExamDay(${i},'endPeriod',+this.value)" style="width:44px;text-align:center;-webkit-appearance:none;-moz-appearance:textfield" min="1" max="9"></td>
         <td><button onclick="removeExamDay(${i})">삭제</button></td>
       </tr>`;
   }).join('');
@@ -240,43 +184,157 @@ function renderExamDayList() {
 // ─── 탭2: 배정설정 ───────────────────────────────────────────────────────────
 
 function renderRequirementsTab() {
-  if (!state.examDays.length || !state.roles.length || !state.rooms.length) {
-    document.getElementById('req-table-wrap').innerHTML = '<p>기본정보를 먼저 입력해주세요.</p>';
+  const wrap = document.getElementById('req-table-wrap');
+  if (!wrap) return;
+
+  if (!state.examDays.length || !state.rooms.length) {
+    wrap.innerHTML = '<p style="color:#7a8599">기본정보(날짜/고사실)를 먼저 입력해주세요.</p>';
     return;
   }
 
   const slots = buildSlots(state.examDays);
-  const roleCount = state.roles.length;
+  if (!slots.length) {
+    wrap.innerHTML = '<p style="color:#7a8599">시험 날짜/교시를 먼저 입력해주세요.</p>';
+    return;
+  }
 
-  let html = `<table class="req-table"><thead><tr>
-    <th>날짜</th><th>교시</th><th>보직</th>
-    ${state.rooms.map(r => `<th>${r}</th>`).join('')}
-  </tr></thead><tbody>`;
+  // 고사실별 감독유형 맵 (isAssistant: true → 부감독, false → 정감독)
+  const metaMap = {};
+  state.roomMeta.forEach(m => { metaMap[m.name] = m; });
 
-  state.examDays.forEach((day, di) => {
-    for (let p = day.startPeriod; p <= day.endPeriod; p++) {
-      for (let r = 0; r < roleCount; r++) {
-        const roleIdx = r + 1;
-        const dayIdx = di + 1;
-        html += `<tr>
-          <td>${r === 0 && p === day.startPeriod ? formatDate(day.date) : ''}</td>
-          <td>${r === 0 ? p + '교시' : ''}</td>
-          <td style="background:${ROLE_COLORS[roleIdx]}">${abbreviateRoleForUI(state.roles[r].name)}</td>
-          ${state.rooms.map(room => {
-            const existing = state.roomRequirements.find(
-              x => x.dayIdx === dayIdx && x.period === p && x.roleIdx === roleIdx && x.roomName === room
-            );
-            return `<td><input type="number" min="0" value="${existing?.count ?? 0}"
-              onchange="updateRoomReq(${dayIdx},${p},${roleIdx},'${room}',+this.value)"
-              style="width:40px;text-align:center"></td>`;
-          }).join('')}
-        </tr>`;
+  // 모든 고사실 목록 (state.rooms 기준)
+  const allRooms = state.rooms;
+
+  // 정감독=옅은녹색, 부감독=옅은노랑
+  const COLOR_CHIEF   = '#eaf6ec'; // 옅은 녹색
+  const COLOR_ASSIST  = '#fff3cd'; // 옅은 노랑
+
+  function getRoleIdx(roomName) {
+    const meta = metaMap[roomName];
+    if (meta?.isAssistant) {
+      // 부감독 역할이 활성화된 경우
+      const assistRole = state.roles.find(r => r.name === '부감독');
+      if (assistRole && assistRole.active !== false) {
+        return state.roles.findIndex(r => r.name === '부감독') + 1;
       }
+    }
+    return state.roles.findIndex(r => r.name === '정감독') + 1;
+  }
+
+  function getCellColor(roomName) {
+    const meta = metaMap[roomName];
+    if (meta?.isAssistant) {
+      const assistRole = state.roles.find(r => r.name === '부감독');
+      if (assistRole && assistRole.active !== false) return COLOR_ASSIST;
+    }
+    return COLOR_CHIEF;
+  }
+
+  function getCellValue(dayIdx, period, roomName) {
+    // roomName 기준으로 검색 (더블클릭 편집으로 roleIdx가 바뀐 경우도 정상 표시)
+    const found = state.roomRequirements.find(
+      x => x.dayIdx === dayIdx && x.period === period && x.roomName === roomName
+    );
+    return found ? found.count : 0;
+  }
+
+  // 날짜 그룹화 (같은 날짜의 교시들을 rowspan으로 묶기)
+  // 슬롯 구조: { dayIdx, period }
+  let html = `<div class="req-grid-scroll" id="req-grid-scroll">
+  <table class="req-grid">
+  <thead>
+    <tr>
+      <th class="req-sticky-date" data-col="0">날짜</th>
+      <th class="req-sticky-period" data-col="1">교시</th>
+      ${allRooms.map((r, ci) => {
+        const color = getCellColor(r);
+        return `<th data-col="${ci + 2}" style="background:${color === COLOR_ASSIST ? '#c8a600' : '#4a7c59'};color:white">${r}</th>`;
+      }).join('')}
+    </tr>
+  </thead>
+  <tbody>`;
+
+  // 날짜+교시 → 슬롯 순서대로 행 생성
+  state.examDays.forEach((day, di) => {
+    const dayIdx = di + 1;
+    const periodCount = day.endPeriod - day.startPeriod + 1;
+
+    for (let p = day.startPeriod; p <= day.endPeriod; p++) {
+      const isFirstPeriod = (p === day.startPeriod);
+      const isLastPeriod  = (p === day.endPeriod);
+      html += `<tr${isLastPeriod ? ' class="req-date-sep"' : ''}>`;
+
+      if (isFirstPeriod) {
+        html += `<td class="req-sticky-date" data-col="0" rowspan="${periodCount}" style="border-bottom:2px solid #6070a0">${formatDate(day.date)}</td>`;
+      }
+
+      html += `<td class="req-sticky-period" data-col="1">${p}</td>`;
+
+      allRooms.forEach((roomName, ci) => {
+        const cellColor = getCellColor(roomName);
+        const val = getCellValue(dayIdx, p, roomName);
+        html += `<td class="req-cell"
+          style="background:${val > 0 ? cellColor : '#fff'};cursor:pointer"
+          data-day="${dayIdx}" data-period="${p}" data-room="${encodeURIComponent(roomName)}"
+          data-assigned="${val > 0 ? 1 : 0}"
+          data-color="${cellColor}"
+          data-col="${ci + 2}"
+          ondblclick="reqCellDblClick(this)"
+          title="더블클릭: 배치/미배치 전환"
+        ></td>`;
+      });
+
+      html += `</tr>`;
     }
   });
 
-  html += `</tbody></table>`;
-  document.getElementById('req-table-wrap').innerHTML = html;
+  html += `</tbody></table></div>`;
+  wrap.innerHTML = html;
+
+  // 내부 스크롤 + 키보드 스크롤
+  const scrollEl = document.getElementById('req-grid-scroll');
+  if (scrollEl) {
+    scrollEl.setAttribute('tabindex', '0');
+    scrollEl.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      scrollEl.scrollTop  += e.deltaY;
+      scrollEl.scrollLeft += e.deltaX;
+    }, { passive: false });
+    scrollEl.addEventListener('keydown', (e) => {
+      const step = 40;
+      if (e.key === 'ArrowDown')  { e.preventDefault(); scrollEl.scrollTop  += step; }
+      if (e.key === 'ArrowUp')    { e.preventDefault(); scrollEl.scrollTop  -= step; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); scrollEl.scrollLeft += step; }
+      if (e.key === 'ArrowLeft')  { e.preventDefault(); scrollEl.scrollLeft -= step; }
+    });
+    scrollEl.addEventListener('mouseenter', () => scrollEl.focus({ preventScroll: true }));
+  }
+
+  // 셀 포커스 (행·열 강조)
+  const table = wrap.querySelector('.req-grid');
+  if (!table) return;
+  const headerRow = table.querySelector('thead tr');
+  const allColHeaders = headerRow ? Array.from(headerRow.querySelectorAll('th')) : [];
+  let lastFR = -1, lastFC = -1;
+
+  table.addEventListener('mousemove', (e) => {
+    const cell = e.target.closest('td, th');
+    if (!cell || cell.closest('thead')) {
+      if (lastFR !== -1 || lastFC !== -1) reqClearFocus(table);
+      lastFR = -1; lastFC = -1; return;
+    }
+    const tr = cell.closest('tr');
+    if (!tr) return;
+    // data-col 속성으로 논리적 열 번호 읽기 (rowspan 어긋남 방지)
+    const col = parseInt(cell.dataset.col ?? '-1', 10);
+    const rowIdx = Array.from(table.querySelectorAll('tbody tr')).indexOf(tr);
+    // col < 2: 날짜(0)·교시(1) 열은 포커스 행 테두리 미적용 (교시는 헤더 강조만)
+    if (rowIdx < 0 || col < 1) { reqClearFocus(table); lastFR = -1; lastFC = -1; return; }
+    if (rowIdx === lastFR && col === lastFC) return;
+    lastFR = rowIdx; lastFC = col;
+    reqApplyFocus(table, allColHeaders, rowIdx, col);
+  });
+  table.addEventListener('mouseleave', () => { reqClearFocus(table); lastFR = -1; lastFC = -1; });
 }
 
 function updateRoomReq(dayIdx, period, roleIdx, roomName, count) {
@@ -292,100 +350,87 @@ function updateRoomReq(dayIdx, period, roleIdx, roomName, count) {
   syncRequirements();
 }
 
+// ── 배정설정 탭 셀 포커스 헬퍼 ──────────────────────────────────────────────
+function reqApplyFocus(table, allColHeaders, focusRow, focusCol) {
+  reqClearFocus(table);
+
+  // 열 헤더 강조 (data-col 기준)
+  const colTh = allColHeaders.find(th => parseInt(th.dataset.col ?? '-1', 10) === focusCol);
+  if (colTh) colTh.classList.add('req-focus-col-header');
+
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  const targetRow = rows[focusRow];
+
+  // 행 강조: 해당 행의 td 중 날짜열(col=0) 제외하고 테두리 적용
+  if (targetRow) {
+    Array.from(targetRow.cells).forEach(td => {
+      const c = parseInt(td.dataset.col ?? '-1', 10);
+      if (c >= 1) td.classList.add('req-focus-row');  // 교시(1)부터만 행 테두리
+    });
+    // 교시 td를 행 헤더 강조
+    const periodTd = Array.from(targetRow.cells).find(td => parseInt(td.dataset.col ?? '-1', 10) === 1);
+    if (periodTd) periodTd.classList.add('req-focus-row-header');
+  }
+
+  // 열 강조: 모든 행에서 같은 data-col을 가진 td에 테두리
+  rows.forEach(tr => {
+    const td = Array.from(tr.cells).find(c => parseInt(c.dataset.col ?? '-1', 10) === focusCol);
+    if (td) td.classList.add('req-focus-col');
+  });
+}
+
+function reqClearFocus(table) {
+  table.querySelectorAll('.req-focus-col-header, .req-focus-row-header, .req-focus-row, .req-focus-col')
+    .forEach(el => el.classList.remove('req-focus-col-header', 'req-focus-row-header', 'req-focus-row', 'req-focus-col'));
+}
+
+// ── 배정설정 탭 더블클릭 — 배치/미배치 토글 ──────────────────────────────────
+window.reqCellDblClick = function(td) {
+  const dayIdx   = +td.dataset.day;
+  const period   = +td.dataset.period;
+  const roomName = decodeURIComponent(td.dataset.room);
+
+  const COLOR_CHIEF  = '#eaf6ec';
+  const COLOR_ASSIST = '#fff3cd';
+
+  // 현재 배정 여부 확인
+  const existIdx = state.roomRequirements.findIndex(
+    x => x.dayIdx === dayIdx && x.period === period && x.roomName === roomName
+  );
+
+  if (existIdx >= 0) {
+    // ── 배치 → 미배치 토글 ──
+    state.roomRequirements.splice(existIdx, 1);
+    td.style.background = '#fff';
+    td.dataset.assigned = '0';
+  } else {
+    // ── 미배치 → 배치 토글 ──
+    // 감독유형은 고사실 메타(isAssistant)에서 자동 결정
+    const meta = state.roomMeta.find(m => m.name === roomName);
+    const isAssist = meta?.isAssistant ?? false;
+    const assistRole = state.roles.find(r => r.name === '부감독');
+    const assistActive = assistRole && assistRole.active !== false;
+
+    const roleIdx = (isAssist && assistActive)
+      ? state.roles.findIndex(r => r.name === '부감독') + 1
+      : state.roles.findIndex(r => r.name === '정감독') + 1;
+    const cellColor = (isAssist && assistActive) ? COLOR_ASSIST : COLOR_CHIEF;
+
+    state.roomRequirements.push({ dayIdx, period, roleIdx, roomName, count: 1 });
+    td.style.background = cellColor;
+    td.dataset.color    = cellColor;
+    td.dataset.assigned = '1';
+  }
+
+  syncRequirements();
+};
+
 function syncRequirements() {
   state.requirements = aggregateRoomRequirements(state.roomRequirements);
 }
 
 // ─── 날짜별 고사실 선택 드롭다운 ─────────────────────────────────────────────
 
-// roomMeta에서 학년별 그룹 정보 추출
-function getRoomGroups() {
-  const gradeMap = {}; // grade -> [roomName]
-  const special = [];  // 특별실
-  state.roomMeta.forEach(m => {
-    if (m.grade) {
-      if (!gradeMap[m.grade]) gradeMap[m.grade] = [];
-      gradeMap[m.grade].push(m.name);
-    } else {
-      special.push(m.name);
-    }
-  });
-  return { gradeMap, special };
-}
-
-// select onChange 핸들러 — 개별 고사실 또는 학년 전체 선택 처리
-window.onRoomSelectChange = (dayIdx, selectEl) => {
-  const val = selectEl.value;
-  if (!val || val === '') return;
-  selectEl.value = ''; // 선택 후 즉시 초기화해서 "고사실 선택..." 으로 복귀
-
-  if (!state.examDayRooms[dayIdx]) state.examDayRooms[dayIdx] = [];
-
-  if (val.startsWith('__group__')) {
-    const grade = val.replace('__group__', '');
-    const { gradeMap, special } = getRoomGroups();
-    let toAdd;
-    if (grade === '__all__') {
-      toAdd = state.roomMeta.map(m => m.name);
-    } else if (grade === '__special__') {
-      toAdd = special;
-    } else {
-      toAdd = gradeMap[grade] ?? [];
-    }
-    toAdd.forEach(name => {
-      if (!state.examDayRooms[dayIdx].includes(name)) state.examDayRooms[dayIdx].push(name);
-    });
-  } else {
-    if (!state.examDayRooms[dayIdx].includes(val)) state.examDayRooms[dayIdx].push(val);
-  }
-
-  autoFillRequirements();
-  renderRoomList();
-  renderExamDayList();
-};
-
-window.removeExamDayRoom = (dayIdx, roomName) => {
-  if (!state.examDayRooms[dayIdx]) return;
-  state.examDayRooms[dayIdx] = state.examDayRooms[dayIdx].filter(r => r !== roomName);
-  autoFillRequirements();
-  renderRoomList();
-  renderExamDayList();
-};
-
-// ─── 배정설정 자동채우기 ──────────────────────────────────────────────────────
-// 날짜별 선택 고사실 + 고사실 종류(정/부) → roomRequirements 자동 생성
-// 정감독 roleIdx=1, 부감독 roleIdx=2 (roles 배열 기준)
-
-function autoFillRequirements() {
-  const role1Idx = state.roles.findIndex(r => r.name === '정감독') + 1;
-  if (!role1Idx) return; // 정감독이 없으면 스킵
-
-  // 부감독: active이고 workload > 0일 때만 유효
-  const assistRole = state.roles.find(r => r.name === '부감독');
-  const role2Idx = (assistRole && assistRole.active !== false && (assistRole.workload ?? 0) > 0)
-    ? state.roles.findIndex(r => r.name === '부감독') + 1
-    : 0;
-
-  const metaMap = {};
-  state.roomMeta.forEach(m => { metaMap[m.name] = m; });
-
-  const newReqs = [];
-  state.examDays.forEach((day, di) => {
-    const dayIdx = di + 1;
-    const rooms = state.examDayRooms[dayIdx] ?? [];
-    for (let p = day.startPeriod; p <= day.endPeriod; p++) {
-      rooms.forEach(roomName => {
-        const meta = metaMap[roomName];
-        // 부감독 고사실인데 부감독이 비활성/없으면 → 정감독으로 대체
-        const roleIdx = (meta?.isAssistant && role2Idx) ? role2Idx : role1Idx;
-        newReqs.push({ dayIdx, period: p, roleIdx, roomName, count: 1 });
-      });
-    }
-  });
-
-  state.roomRequirements = newReqs;
-  syncRequirements();
-}
 
 function pruneStaleRoomRequirements() {
   const before = state.roomRequirements.length;
@@ -395,34 +440,94 @@ function pruneStaleRoomRequirements() {
 }
 
 function downloadRequirementsCSVTemplate() {
-  if (!state.examDays.length || !state.roles.length || !state.rooms.length) {
-    toast('기본정보(날짜/보직/고사실)를 먼저 입력하세요.'); return;
+  if (!state.examDays.length || !state.rooms.length) {
+    toast('기본정보(날짜/고사실)를 먼저 입력하세요.'); return;
   }
-  const rows = [['날짜', '교시', '보직', ...state.rooms]];
+  const metaMap = {};
+  state.roomMeta.forEach(m => { metaMap[m.name] = m; });
+
+  // 헤더: 날짜, 교시, 고사실명들
+  const rows = [['날짜', '교시', ...state.rooms]];
+
   state.examDays.forEach((day, di) => {
+    const dayIdx = di + 1;
+
     for (let p = day.startPeriod; p <= day.endPeriod; p++) {
-      state.roles.forEach((role, ri) => {
-        const roleIdx = ri + 1;
-        const counts = state.rooms.map(room => {
-          const found = state.roomRequirements.find(x =>
-            x.dayIdx === di + 1 && x.period === p && x.roleIdx === roleIdx && x.roomName === room);
-          return found?.count ?? 0;
-        });
-        rows.push([day.date, p, role.name, ...counts]);
+      const cells = state.rooms.map(roomName => {
+        const found = state.roomRequirements.find(x =>
+          x.dayIdx === dayIdx && x.period === p && x.roomName === roomName
+        );
+        // 기존 배정 있으면 '1', 없으면 빈칸
+        return found ? '1' : '';
       });
+      rows.push([day.date, p, ...cells]);
     }
   });
+
   downloadCSV(rows.map(r => r.join(',')).join('\n'), '배정감독수_양식.csv');
 }
 
 function importRequirementsCSV(text) {
-  const { roomRequirements, errors } = parseRequirementsCSV(text, state.examDays, state.roles);
+  // 새 CSV 포맷: 날짜, 교시, [고사실명...]
+  // 각 고사실 셀이 비어있지 않으면 → 배정 1명
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  if (lines.length < 2) { toast('CSV 파일이 비어있거나 형식이 잘못되었습니다.'); return; }
+
+  const headers = parseCSVLine(lines[0]);
+  // headers[0]=날짜, headers[1]=교시, headers[2..]= 고사실명들
+  const roomHeaders = headers.slice(2).map(h => h.trim());
+
+  const metaMap = {};
+  state.roomMeta.forEach(m => { metaMap[m.name] = m; });
+
+  const assistRole = state.roles.find(r => r.name === '부감독');
+  const assistActive = assistRole && assistRole.active !== false;
+  const chiefRoleIdx = state.roles.findIndex(r => r.name === '정감독') + 1;
+  const assistRoleIdx = assistActive ? state.roles.findIndex(r => r.name === '부감독') + 1 : 0;
+
+  const newReqs = [];
+  const errors = [];
+
+  lines.slice(1).forEach((line, li) => {
+    const parts = parseCSVLine(line);
+    const dateStr  = (parts[0] ?? '').trim();
+    const periodStr = (parts[1] ?? '').trim();
+    if (!dateStr || !periodStr) return;
+
+    const period = parseInt(periodStr, 10);
+    if (isNaN(period)) { errors.push(`${li + 2}행: 교시 "${periodStr}"이 숫자가 아닙니다.`); return; }
+
+    // 날짜 → dayIdx 매핑
+    const dayIdx = state.examDays.findIndex(d => d.date === dateStr) + 1;
+    if (!dayIdx) { errors.push(`${li + 2}행: 날짜 "${dateStr}"이 기본정보에 없습니다.`); return; }
+
+    roomHeaders.forEach((roomName, ri) => {
+      const val = (parts[ri + 2] ?? '').trim();
+      if (!val) return; // 빈칸 → 배정 없음
+
+      // 해당 고사실 감독유형 결정
+      const meta = metaMap[roomName];
+      const isAssist = meta?.isAssistant;
+      const roleIdx = (isAssist && assistRoleIdx) ? assistRoleIdx : chiefRoleIdx;
+
+      if (!roleIdx) return;
+      newReqs.push({ dayIdx, period, roleIdx, roomName, count: 1 });
+    });
+  });
+
   if (errors.length > 0) {
-    alert('⚠️ CSV 파일에 오류가 있습니다. 수정 후 다시 업로드해주세요.\n\n' + errors.join('\n'));
+    showErrorModal({
+      title: '배정감독수 CSV 오류',
+      desc: 'CSV 파일을 읽는 중 오류가 발생했습니다. 파일을 수정 후 다시 업로드해 주세요.',
+      errors,
+      fix: '● 날짜는 기본정보에 등록된 날짜와 정확히 일치해야 합니다 (예: 2026-07-15).\n● 교시는 숫자만 입력하세요.\n● CSV양식 받기 버튼으로 올바른 양식을 먼저 받아 사용하면 편리합니다.',
+    });
     return;
   }
-  state.roomRequirements = roomRequirements;
+
+  state.roomRequirements = newReqs;
   syncRequirements();
+  renderRequirementsTab();
   toast('배정감독수 가져오기 완료 (기존 설정 교체)');
 }
 
@@ -682,27 +787,28 @@ function renderAssignGrid() {
   let html = `<div class="grid-scroll" id="assign-grid-scroll"><table class="assign-grid">
   <thead>
     <tr>
-      <th>순번</th><th>이름</th><th>제외 고사실</th>
+      <th>순<br>번</th><th>이름</th><th>제외<br>고사실</th>
       ${slots.map((s, idx) => {
         const day = state.examDays[s.dayIdx - 1];
         return `<th class="slot-header" data-col="${idx + 3}">${formatDate(day?.date)}<br>${s.period}교시</th>`;
       }).join('')}
-      <th class="sticky-right">총감독</th><th class="sticky-right">누적강도</th>
-      ${state.roles.map(r => `<th class="sticky-right">${r.name}</th>`).join('')}
+      <th class="sticky-right sticky-total-sep">총<br>감독</th>
+      ${state.roles.map(r => { const parts = r.name === '정감독' ? ['정','감독'] : r.name === '부감독' ? ['부','감독'] : [r.name]; return `<th class="sticky-right">${parts.join('<br>')}</th>`; }).join('')}
+      <th class="sticky-right sticky-right-sep">누적<br>강도</th>
     </tr>
   </thead><tbody>`;
 
-  // 오른쪽 고정 열 수: 총감독 + 누적강도 + 보직 수
+  // 오른쪽 고정 열 수: 총감독 + 감독유형 수 + 누적강도
   const rightFixedCount = 2 + state.roles.length;
 
   for (let i = 1; i <= tCount; i++) {
     const t = state.teachers[i - 1];
     const roleCells = state.roles.map((_, ri) =>
-      `<td class="sticky-right">${state.roleCounts[i - 1]?.counts?.[ri + 1] ?? 0}</td>`
+      `<td class="sticky-right" style="user-select:none;pointer-events:none">${state.roleCounts[i - 1]?.counts?.[ri + 1] ?? 0}</td>`
     ).join('');
     html += `<tr data-row="${i}">
       <td>${i}</td>
-      <td class="row-header-cell">${t.name}</td>
+      <td class="row-header-cell" style="${t.name.length > 3 ? 'font-size:' + Math.max(5.5, 9.5 * 3 / t.name.length) + 'px' : ''}">${t.name}</td>
       <td>${t.forbiddenRooms || '-'}</td>
       ${slots.map((s, idx) => {
         const j = idx + 1;
@@ -715,9 +821,9 @@ function renderAssignGrid() {
           title="${title}"
         >${text}</td>`;
       }).join('')}
-      <td class="sticky-right">${state.roleCounts[i - 1]?.counts?.reduce((s, v) => s + v, 0) ?? 0}</td>
-      <td class="sticky-right">${Math.round(state.workload[i] ?? 0)}</td>
+      <td class="sticky-right sticky-total sticky-total-sep" style="user-select:none;pointer-events:none;cursor:default">${state.roleCounts[i - 1]?.counts?.reduce((s, v) => s + v, 0) ?? 0}</td>
       ${roleCells}
+      <td class="sticky-right sticky-right-sep" style="user-select:none;pointer-events:none">${Math.round(state.workload[i] ?? 0)}</td>
     </tr>`;
   }
 
@@ -994,11 +1100,12 @@ async function runAssign() {
   const pendingTeacherIdxs = findPendingFixedCells();
   if (pendingTeacherIdxs.length) {
     const names = pendingTeacherIdxs.map(i => state.teachers[i - 1]?.name || `#${i}`).join(', ');
-    alert(
-      `⚠️ 고정(시간)으로 지정했지만 정/부 유형(1 또는 2)을 입력하지 않은 칸이 있습니다.\n` +
-      `[고정(시간)] 모드를 켜고 해당 칸(파란색, "?" 표시)을 더블클릭해서 유형을 입력한 후 다시 시도하세요.\n\n` +
-      `대상 교사: ${names}`
-    );
+    showErrorModal({
+      title: '고정(시간) 감독유형 미입력',
+      desc: '고정(시간)으로 지정했지만 정감독/부감독 유형을 입력하지 않은 칸이 있습니다.\n자동배정을 실행하려면 모든 고정(시간) 칸에 감독유형이 지정되어 있어야 합니다.',
+      errors: [`감독유형 미입력 대상 교사: ${names}`],
+      fix: '① 자동배정 탭에서 [고정(시간)] 버튼을 클릭하여 모드를 켭니다.\n② 파란색으로 표시되고 "?" 가 있는 칸을 더블클릭합니다.\n③ 입력창에 1(정감독) 또는 2(부감독)를 입력하고 Enter를 누릅니다.\n④ 모든 칸에 유형을 지정한 후 다시 자동배정을 실행하세요.',
+    });
     return;
   }
 
@@ -1008,7 +1115,15 @@ async function runAssign() {
 
   try {
     const { ok, errors } = validateAssignment(state.slots, state.requirements);
-    if (!ok) { alert(errors.join('\n')); return; }
+    if (!ok) {
+      showErrorModal({
+        title: '자동배정 실행 불가',
+        desc: '배정을 실행하기 위한 필수 조건이 충족되지 않았습니다.',
+        errors,
+        fix: '배정설정 탭으로 이동하여 고사실별 감독인원을 설정한 후 다시 시도하세요.\n● CSV를 업로드하거나 셀을 더블클릭하여 직접 입력할 수 있습니다.',
+      });
+      return;
+    }
 
     const slots = buildSlots(state.examDays);
 
@@ -1028,9 +1143,35 @@ async function runAssign() {
     state.swapHistory = [];
 
     if (result.roomShortages.length > 0) {
-      toast(`⚠️ 고사실 칸보다 배정인원이 많아 ${result.roomShortages.length}자리 미배정 — 배정설정의 보직별 합계를 확인하세요`, 6000);
+      const shortageDetails = result.roomShortages.map(s => {
+        const slot = result.slots[s.j - 1];
+        const day = slot ? state.examDays[slot.dayIdx - 1] : null;
+        const dateStr = day ? formatDate(day.date) : `${s.j}번 슬롯`;
+        const period = slot ? `${slot.period}교시` : '';
+        const roleName = state.roles[s.roleIdx - 1]?.name ?? `감독유형${s.roleIdx}`;
+        return `${dateStr} ${period} — ${roleName} 미배정`;
+      });
+      showErrorModal({
+        title: '배정 미완료: 고사실 부족',
+        desc: `배정설정에 설정된 고사실 수보다 배정되어야 할 교사 수가 많아 ${result.roomShortages.length}자리가 미배정 처리되었습니다.\n\n자동배정 테이블에서 "미배정"으로 표시된 셀을 확인하세요.`,
+        errors: shortageDetails,
+        fix: '다음 중 하나를 수정하세요:\n① 배정설정 탭에서 해당 날짜/교시의 미배정 고사실을 추가로 배정하세요.\n② 교사 목록에서 해당 교사의 제외 고사실이 너무 많지 않은지 확인하세요.\n③ 배정할 교사 수와 고사실 수가 일치하는지 확인하세요.',
+      });
     } else if (result.forbiddenViolations.length > 0) {
-      toast(`⚠️ 제외 고사실 ${result.forbiddenViolations.length}건 미해결 — 빨간 셀 확인`, 5000);
+      const violationDetails = result.forbiddenViolations.map(v => {
+        const teacher = state.teachers[v.i - 1]?.name ?? `#${v.i}`;
+        const slot = result.slots[v.j - 1];
+        const day = slot ? state.examDays[slot.dayIdx - 1] : null;
+        const dateStr = day ? formatDate(day.date) : `슬롯${v.j}`;
+        const period = slot ? `${slot.period}교시` : '';
+        return `${teacher} — ${dateStr} ${period}에 제외 고사실 배정됨`;
+      });
+      showErrorModal({
+        title: '배정 경고: 제외 고사실 위반',
+        desc: `교사의 "제외 고사실" 설정이 있지만 해당 고사실에 배정되지 못한 경우가 ${result.forbiddenViolations.length}건 발생했습니다.\n\n자동배정 테이블에서 빨간색 셀을 확인하세요.`,
+        errors: violationDetails,
+        fix: '다음을 확인하세요:\n① 교사 목록에서 제외 고사실 설정이 올바른지 확인하세요.\n② 제외 고사실이 너무 많아 배정 가능한 고사실이 없는 경우일 수 있습니다.\n③ 배정 후 해당 셀을 수동으로 교환(⇄ 선택 셀 교환)하여 조정하세요.',
+      });
     } else {
       toast('✅ 배정 완료');
     }
@@ -1045,7 +1186,12 @@ async function runAssign() {
       slots: state.slots,
     });
   } catch (e) {
-    alert('배정 중 오류: ' + e.message);
+    showErrorModal({
+      title: '배정 실행 중 오류 발생',
+      desc: '자동배정 처리 중 예상치 못한 오류가 발생했습니다.',
+      errors: [e.message],
+      fix: '입력 데이터(교사 목록, 고사실, 배정설정)를 확인하고 다시 시도하세요.\n문제가 지속되면 전체 초기화 후 데이터를 다시 입력해 주세요.',
+    });
     console.error(e);
   } finally {
     btn.disabled = false;
@@ -1069,7 +1215,7 @@ async function loadAll() {
       ? basic.roles
       : [{ name: '정감독', workload: 100 }, { name: '부감독', workload: 50, active: true }];
     state.examDays = basic.examDays ?? [];
-    state.examDayRooms = basic.examDayRooms ?? {};
+    // examDayRooms 제거됨
     state.requirements = reqs.requirements ?? [];
     state.roomRequirements = reqs.roomRequirements ?? [];
     state.excludedCells = basic.excludedCells ?? {};
@@ -1103,7 +1249,7 @@ async function saveAll() {
     await Promise.all([
       saveBasic({
         teachers: state.teachers, rooms: state.rooms, roomMeta: state.roomMeta,
-        roles: state.roles, examDays: state.examDays, examDayRooms: state.examDayRooms,
+        roles: state.roles, examDays: state.examDays,
         excludedCells: state.excludedCells, preFixed: state.preFixed,
       }),
       saveRequirements({ requirements: state.requirements, roomRequirements: state.roomRequirements }),
@@ -1248,28 +1394,31 @@ function resetSection(section) {
     examDays: '시험 날짜 및 교시',
     teachers: '감독교사 목록',
     rooms: '고사실 목록',
-    roles: '보직 및 업무강도',
+    roles: '감독유형 및 업무강도',
+    requirements: '배정감독수 설정',
     assign: '자동배정 결과 · 제외시간 · 고정(시간) 표시',
   };
   if (!confirm(`"${labels[section] ?? section}" 데이터를 초기화합니다. 계속할까요?`)) return;
 
   if (section === 'examAndRooms') {
-    state.examDays = []; state.examDayRooms = {};
+    state.examDays = [];
     state.rooms = []; state.roomMeta = [];
     state.roomRequirements = []; syncRequirements();
     renderRoomList(); renderExamDayList();
   } else if (section === 'examDays') {
-    state.examDays = []; state.examDayRooms = {};
+    state.examDays = [];
     state.roomRequirements = []; syncRequirements(); renderExamDayList();
   } else if (section === 'teachers') {
     state.teachers = []; state.excludedCells = {}; state.preFixed = {}; renderTeacherList();
   } else if (section === 'rooms') {
     state.rooms = []; state.roomMeta = [];
-    Object.keys(state.examDayRooms).forEach(d => { state.examDayRooms[d] = []; });
     pruneStaleRoomRequirements(); renderRoomList(); renderExamDayList();
   } else if (section === 'roles') {
     state.roles = [{ name: '정감독', workload: 100 }, { name: '부감독', workload: 50, active: true }];
     state.roomRequirements = []; syncRequirements(); renderRoleList();
+  } else if (section === 'requirements') {
+    // CSV로 올린 배정 데이터만 초기화 (기본정보 날짜/고사실은 유지)
+    state.roomRequirements = []; syncRequirements(); renderRequirementsTab();
   } else if (section === 'assign') {
     state.data = null; state.fixedCells = {}; state.workload = []; state.roleCounts = [];
     state.slots = []; state.selectedCells = []; state.swapHistory = [];
@@ -1353,7 +1502,12 @@ function importTeacherCSV(text) {
   });
 
   if (errors.length > 0) {
-    alert('⚠️ CSV 파일에 오류가 있습니다. 수정 후 다시 업로드해주세요.\n\n' + errors.join('\n'));
+    showErrorModal({
+      title: '교사 CSV 오류',
+      desc: 'CSV 파일을 읽는 중 오류가 발생했습니다. 파일을 수정 후 다시 업로드해 주세요.',
+      errors,
+      fix: '● CSV양식 받기 버튼으로 올바른 양식을 먼저 받아 사용하면 편리합니다.\n● 감독유형 열은 고정시간이 있을 때만 1(정감독) 또는 2(부감독)를 입력하세요.\n● 고정시간과 감독유형의 개수가 일치해야 합니다 (쉼표로 구분).',
+    });
     return;
   }
 
@@ -1372,12 +1526,11 @@ function importRoomCSV(text) {
   const newMeta = dataLines.map(line => {
     const parts = parseCSVLine(line);
     const name = (parts[0] ?? '').trim();
-    const grade = (parts[1] ?? '').trim();   // '1','2','3' 또는 빈값(특별실)
-    const assistantVal = (parts[2] ?? '').trim(); // '1'이면 부감독
+    const assistantVal = (parts[1] ?? '').trim(); // 빈칸이 아니면 부감독
     return {
       name,
-      grade: grade || null,
-      isAssistant: assistantVal === '1',
+      grade: null,
+      isAssistant: assistantVal !== '',
     };
   }).filter(m => m.name);
 
@@ -1390,7 +1543,6 @@ function importRoomCSV(text) {
   state.roomMeta = newMeta;
   state.roomRequirements = kept;
   syncRequirements();
-  autoFillRequirements();
   renderRoomList();
   renderExamDayList();
   toast(`고사실 ${state.rooms.length}개 가져오기 완료`);
@@ -1411,10 +1563,10 @@ function downloadTeacherCSVTemplate() {
 }
 
 function downloadRoomCSVTemplate() {
-  const header = '고사실명,학년,부감독';
+  const header = '고사실명,부감독';
   const rows = state.roomMeta.length
-    ? state.roomMeta.map(m => [csvField(m.name), m.grade ?? '', m.isAssistant ? '1' : ''].join(','))
-    : ['101,1,', '102,1,', '1년복도(전),1,1', '201,2,', '2년복도(전),2,1', '별관복도,,1'];
+    ? state.roomMeta.map(m => [csvField(m.name), m.isAssistant ? '1' : ''].join(','))
+    : [];  // 데이터 없을 때 헤더만
   downloadCSV([header, ...rows].join('\n'), '고사실목록_양식.csv');
 }
 
@@ -1433,7 +1585,7 @@ function downloadCSV(content, filename) {
 window.updateTeacher = (idx, key, val) => { state.teachers[idx][key] = val; };
 window.updateTeacherField = updateTeacherField;
 window.updateRole = (idx, key, val) => { state.roles[idx][key] = val; };
-window.updateExamDay = (idx, key, val) => { state.examDays[idx][key] = val; renderRoomList(); };
+window.updateExamDay = (idx, key, val) => { state.examDays[idx][key] = val; renderExamDayList(); };
 window.updateRoomReq = updateRoomReq;
 window.onCellClick = onCellClick;
 window.onCellDblClick = onCellDblClick;
@@ -1466,12 +1618,7 @@ window.removeRoom = (idx) => {
   const room = state.rooms[idx];
   state.rooms.splice(idx, 1);
   state.roomMeta.splice(idx, 1);
-  // 날짜별 선택 고사실에서도 제거
-  Object.keys(state.examDayRooms).forEach(d => {
-    state.examDayRooms[d] = state.examDayRooms[d].filter(r => r !== room);
-  });
   pruneStaleRoomRequirements();
-  autoFillRequirements();
   renderRoomList();
   renderExamDayList();
 };
@@ -1480,22 +1627,13 @@ window.removeRole = (idx) => {
   state.roles.splice(idx, 1);
   state.roomRequirements = removeRoleFromRequirements(state.roomRequirements, removedRoleIdx);
   syncRequirements();
-  autoFillRequirements();
   renderRoleList();
 };
 window.removeExamDay = (idx) => {
   const removedDayIdx = idx + 1;
   state.examDays.splice(idx, 1);
-  // examDayRooms 재인덱싱
-  const newMap = {};
-  Object.keys(state.examDayRooms).map(Number).forEach(d => {
-    if (d === removedDayIdx) return;
-    newMap[d < removedDayIdx ? d : d - 1] = state.examDayRooms[d];
-  });
-  state.examDayRooms = newMap;
   state.roomRequirements = removeDayFromRequirements(state.roomRequirements, removedDayIdx);
   syncRequirements();
-  autoFillRequirements();
   renderExamDayList();
 };
 
@@ -1513,14 +1651,12 @@ window.addRoom = () => {
 window.updateAssistWorkload = (val) => {
   if (state.roles[1]) {
     state.roles[1].workload = val;
-    autoFillRequirements();
   }
 };
 
 window.toggleAssistRole = () => {
   if (!state.roles[1]) return;
   state.roles[1].active = state.roles[1].active === false ? true : false;
-  autoFillRequirements();
   renderRoleList();
 };
 
@@ -1530,8 +1666,6 @@ window.addRole = () => {
 };
 window.addExamDay = () => {
   state.examDays.push({ date: '', startPeriod: 1, endPeriod: 4 });
-  // 새 날짜의 examDayRooms는 빈 배열로 초기화
-  state.examDayRooms[state.examDays.length] = [];
   renderExamDayList();
 };
 
@@ -1547,6 +1681,8 @@ window.runAssign = runAssign;
 window.doSwap = doSwap;
 window.downloadTeacherCSVTemplate = downloadTeacherCSVTemplate;
 window.downloadRoomCSVTemplate = downloadRoomCSVTemplate;
+window.downloadRequirementsCSVTemplate = downloadRequirementsCSVTemplate;
+window.showRequirementsTab = renderRequirementsTab;
 
 
 function fullTableParams() {
@@ -1682,6 +1818,47 @@ function showLoading(on) {
   const el = document.getElementById('loading');
   if (el) el.style.display = on ? 'flex' : 'none';
 }
+
+// ─── 오류 모달 ────────────────────────────────────────────────────────────────
+// title: 모달 제목
+// desc: 상황 설명 (문자열)
+// errors: 오류 항목 배열 (선택)
+// fix: 수정 방법 안내 (문자열, 선택)
+function showErrorModal({ title, desc, errors = [], fix = '' }) {
+  const modal = document.getElementById('error-modal');
+  if (!modal) { alert(desc + '\n' + errors.join('\n')); return; }
+
+  document.getElementById('error-modal-title').textContent = title;
+
+  let html = '';
+  if (desc) {
+    html += `<div class="error-modal-section">
+      <div class="error-modal-section-title">발생 상황</div>
+      <div class="error-modal-desc">${desc.replace(/\n/g, '<br>')}</div>
+    </div>`;
+  }
+  if (errors.length) {
+    html += `<div class="error-modal-section">
+      <div class="error-modal-section-title">오류 목록 (${errors.length}건)</div>
+      <ul class="error-modal-list">${errors.map(e => `<li>${e.replace(/\n/g, '<br>')}</li>`).join('')}</ul>
+    </div>`;
+  }
+  if (fix) {
+    html += `<div class="error-modal-section">
+      <div class="error-modal-section-title">💡 수정 방법</div>
+      <div class="error-modal-fix">${fix.replace(/\n/g, '<br>')}</div>
+    </div>`;
+  }
+
+  document.getElementById('error-modal-body').innerHTML = html;
+  modal.style.display = 'flex';
+}
+
+window.closeErrorModal = function(e) {
+  if (e?.target === document.getElementById('error-modal')) {
+    document.getElementById('error-modal').style.display = 'none';
+  }
+};
 
 // ─── 초기화 ───────────────────────────────────────────────────────────────────
 

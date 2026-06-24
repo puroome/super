@@ -6,7 +6,7 @@
   <title>시험감독 배정 시스템</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
+<body oncontextmenu="return false">
 
 <div id="loading">⏳ 불러오는 중...</div>
 <div id="toast"></div>
@@ -17,6 +17,20 @@
     <h3>📂 저장된 데이터 불러오기</h3>
     <div id="load-list"></div>
     <button class="btn-outline" onclick="closeLoadModal()" style="margin-top:12px">닫기</button>
+  </div>
+</div>
+
+<!-- 오류 안내 모달 -->
+<div id="error-modal" class="modal-overlay" style="display:none" onclick="closeErrorModal(event)">
+  <div class="modal-box error-modal-box">
+    <div class="error-modal-header">
+      <span id="error-modal-icon">⚠️</span>
+      <h3 id="error-modal-title"></h3>
+    </div>
+    <div id="error-modal-body"></div>
+    <div style="text-align:right;margin-top:16px">
+      <button class="btn-primary" onclick="document.getElementById('error-modal').style.display='none'">확인</button>
+    </div>
   </div>
 </div>
 
@@ -53,6 +67,7 @@
 <!-- 탭 -->
 <div class="tabs">
   <button class="tab-btn active" data-tab="tab-basic">📝 기본정보</button>
+  <button class="tab-btn" data-tab="tab-req">📊 배정설정</button>
   <button class="tab-btn" data-tab="tab-assign">🎯 자동배정</button>
   <button class="tab-btn" data-tab="tab-table">📋 감독표</button>
 </div>
@@ -63,38 +78,57 @@
 <div id="tab-basic" class="tab-panel active">
   <div class="basic-grid">
 
-    <!-- 시험일 및 고사실 -->
-    <div class="card" style="grid-column: 1 / -1">
-      <h2>📅 시험일 및 고사실</h2>
-      <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <button class="btn-primary" onclick="addExamDay()">+ 날짜 추가</button>
-        <label class="btn-outline" style="padding:5px 12px;cursor:pointer">
-          🏫 고사실 추가
-          <input type="file" accept=".csv" onchange="handleRoomCSV(event)" style="display:none">
-        </label>
-        <button class="btn-outline" onclick="downloadRoomCSVTemplate()">⬇ 고사실 CSV 양식 받기</button>
-        <button class="btn-danger btn-sm" onclick="resetSection('examAndRooms')">🗑 초기화</button>
+    <!-- 상단 행: 시험일 및 고사실 + 감독유형 나란히 -->
+    <div class="basic-top-row">
+
+      <!-- 시험일 및 고사실 -->
+      <div class="card basic-exam-card">
+        <h2>📅 시험일 및 고사실</h2>
+        <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <button class="btn-primary" onclick="addExamDay()">+ 날짜 추가</button>
+          <label class="btn-csv-upload">
+            고사실CSV 올리기
+            <input type="file" accept=".csv" onchange="handleRoomCSV(event)" style="display:none">
+          </label>
+          <button class="btn-csv-download" onclick="downloadRoomCSVTemplate()">고사실 CSV 받기</button>
+          <button class="btn-danger btn-sm" onclick="resetSection('examAndRooms')">🗑 초기화</button>
+        </div>
+        <p class="csv-hint" style="margin-bottom:8px">고사실 CSV 열: <b>고사실명, 부감독(값이 있으면 부감독, 비우면 정감독)</b></p>
+        <div id="room-list" style="margin-bottom:10px"></div>
+        <div style="overflow-x:auto">
+          <table class="examday-table">
+            <thead>
+              <tr><th>날짜</th><th>시작교시</th><th>종료교시</th><th>삭제</th></tr>
+            </thead>
+            <tbody id="examday-list"></tbody>
+          </table>
+        </div>
       </div>
-      <p class="csv-hint" style="margin-bottom:8px">고사실 CSV 열: <b>고사실명, 학년(1·2·3, 비우면 특별실), 부감독(1이면 부감독, 비우면 정감독)</b></p>
-      <div id="room-list" style="margin-bottom:10px"></div>
-      <div style="overflow-x:auto">
-        <table class="examday-table">
+
+      <!-- 감독유형 및 업무강도 -->
+      <div class="card basic-role-card">
+        <h2>📌 감독유형 및 업무강도</h2>
+        <table>
           <thead>
-            <tr><th>날짜</th><th>시작교시</th><th>종료교시</th><th>해당일 고사실</th><th>삭제</th></tr>
+            <tr><th>감독유형</th><th>업무강도</th><th></th></tr>
           </thead>
-          <tbody id="examday-list"></tbody>
+          <tbody id="role-list"></tbody>
         </table>
+        <p class="csv-hint" style="margin-top:6px">업무강도: 정감독=100 고정 / 부감독은 상대적 값 입력 (예: 50)</p>
       </div>
+
     </div>
+
+    <!-- 하단 행: 감독교사 목록 (전체 폭) -->
     <div class="card">
       <h2>👩‍🏫 감독교사 목록</h2>
       <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn-primary" onclick="addTeacher()">+ 교사 추가</button>
-        <label class="btn-outline" style="padding:5px 12px;cursor:pointer">
-          📂 CSV 업로드
+        <label class="btn-csv-upload">
+          CSV 올리기
           <input type="file" accept=".csv" onchange="handleTeacherCSV(event)" style="display:none">
         </label>
-        <button class="btn-outline" onclick="downloadTeacherCSVTemplate()">⬇ CSV양식 받기</button>
+        <button class="btn-csv-download" onclick="downloadTeacherCSVTemplate()">CSV 양식 받기</button>
         <button class="btn-outline" onclick="openPrevWorkloadPicker(this)">📊 이전누적강도 불러오기</button>
         <button class="btn-danger btn-sm" onclick="resetSection('teachers')">🗑 초기화</button>
       </div>
@@ -104,17 +138,30 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>📌 보직 및 업무강도</h2>
-      <table>
-        <thead>
-          <tr><th>보직명</th><th>업무강도</th><th></th></tr>
-        </thead>
-        <tbody id="role-list"></tbody>
-      </table>
-      <p class="csv-hint" style="margin-top:6px">업무강도: 정감독=100 고정 / 부감독은 상대적 값 입력 (예: 50)</p>
-    </div>
+  </div>
+</div>
 
+<!-- ══════════════════════════════════════════
+     탭2: 배정설정
+════════════════════════════════════════════ -->
+<div id="tab-req" class="tab-panel">
+  <div class="card">
+    <h2>📊 고사실별 배정감독수 설정</h2>
+    <p style="margin-bottom:10px;color:#7a8599;font-size:12px">
+      고사실별 감독인원을 설정하세요. 셀을 더블클릭하면 배치/미배치가 전환됩니다.<br>
+      <b>셀 색상:</b> <span style="background:#eaf6ec;padding:1px 8px;border-radius:3px">옅은 녹색 = 정감독 배치</span>&nbsp;
+      <span style="background:#fff3cd;padding:1px 8px;border-radius:3px">옅은 노란색 = 부감독 배치</span>&nbsp;
+      흰색 = 미배치 (감독유형은 고사실 정보에서 자동 결정)
+    </p>
+    <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+      <label class="btn-csv-upload">
+        CSV 올리기
+        <input type="file" accept=".csv" onchange="handleRequirementsCSV(event)" style="display:none">
+      </label>
+      <button class="btn-csv-download" onclick="downloadRequirementsCSVTemplate()">CSV 양식 받기</button>
+      <button class="btn-danger btn-sm" onclick="resetSection('requirements')">🗑 초기화</button>
+    </div>
+    <div id="req-table-wrap"></div>
   </div>
 </div>
 
