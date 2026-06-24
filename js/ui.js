@@ -14,7 +14,7 @@ import {
   loadBasic, saveBasic,
   loadRequirements, saveRequirements,
   loadAssignment, saveAssignment, updateFixedCells, parseAssignment,
-  clearCurrentDocs, saveNamed, listSaves, loadNamed, deleteNamed,
+  clearCurrentDocs, saveNamed, updateNamed, listSaves, loadNamed, deleteNamed,
 } from './firebase.js';
 import {
   printFullTable, printPersonalTable, printAllPersonal, downloadFullTableXLSX,
@@ -50,6 +50,39 @@ const state = {
 
 // 마지막으로 그린 그리드의 슬롯 배열 캐시 (클릭/드래그/우클릭 핸들러에서 공용 사용)
 let gridSlots = [];
+
+// 현재 작업 중인 이름 저장본. 워드/한글 문서처럼
+// - 처음 저장: 이름을 묻고 새 저장본 생성
+// - 이후 저장: 같은 저장본에 덮어쓰기
+// - 다른 이름 저장: 새 저장본 생성 후 그 저장본을 현재 작업본으로 지정
+const CURRENT_SAVE_META_KEY = 'examSupervisor.currentSaveMeta';
+let currentSaveMeta = readCurrentSaveMeta();
+
+function readCurrentSaveMeta() {
+  try {
+    const raw = window.localStorage?.getItem(CURRENT_SAVE_META_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.id && parsed?.name ? { id: parsed.id, name: parsed.name } : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setCurrentSaveMeta(id, name) {
+  currentSaveMeta = id && name ? { id, name } : null;
+  try {
+    if (currentSaveMeta) {
+      window.localStorage?.setItem(CURRENT_SAVE_META_KEY, JSON.stringify(currentSaveMeta));
+    } else {
+      window.localStorage?.removeItem(CURRENT_SAVE_META_KEY);
+    }
+  } catch (e) { /* localStorage 사용 불가 시 무시 */ }
+}
+
+function clearCurrentSaveMeta() {
+  setCurrentSaveMeta(null, null);
+}
 
 // ─── 탭 전환 ─────────────────────────────────────────────────────────────────
 
@@ -1244,20 +1277,35 @@ async function loadAll() {
 
 // ─── 저장 ────────────────────────────────────────────────────────────────────
 
+async function persistCurrentDocs() {
+  await Promise.all([
+    saveBasic({
+      teachers: state.teachers, rooms: state.rooms, roomMeta: state.roomMeta,
+      roles: state.roles, examDays: state.examDays,
+      excludedCells: state.excludedCells, preFixed: state.preFixed,
+    }),
+    saveRequirements({ requirements: state.requirements, roomRequirements: state.roomRequirements }),
+    saveAssignment({
+      data: state.data ?? null,
+      fixedCells: state.fixedCells ?? {},
+      workload: state.workload ?? [],
+      roleCounts: state.roleCounts ?? [],
+      slots: state.slots ?? [],
+    }),
+  ]);
+}
+
 async function saveAll() {
+  if (!currentSaveMeta?.id) {
+    await saveAsNamed();
+    return;
+  }
+
   try {
-    await Promise.all([
-      saveBasic({
-        teachers: state.teachers, rooms: state.rooms, roomMeta: state.roomMeta,
-        roles: state.roles, examDays: state.examDays,
-        excludedCells: state.excludedCells, preFixed: state.preFixed,
-      }),
-      saveRequirements({ requirements: state.requirements, roomRequirements: state.roomRequirements }),
-    ]);
-    if (state.data) {
-      await saveAssignment({ data: state.data, fixedCells: state.fixedCells, workload: state.workload, roleCounts: state.roleCounts, slots: state.slots });
-    }
-    toast('✅ 저장 완료');
+    const snapshot = buildSaveSnapshot(state);
+    await updateNamed(currentSaveMeta.id, currentSaveMeta.name, snapshot);
+    await persistCurrentDocs();
+    toast(`✅ "${currentSaveMeta.name}" 저장 완료`);
   } catch (e) {
     toast('저장 실패: ' + e.message, 4000);
     console.error(e);
@@ -1278,6 +1326,7 @@ async function resetAll() {
   Object.assign(state, emptyState());
   state.selectedCells = [];
   state.swapHistory = [];
+  clearCurrentSaveMeta();
   rerenderAll();
   try {
     await clearCurrentDocs();
@@ -1288,11 +1337,15 @@ async function resetAll() {
 }
 
 async function saveAsNamed() {
-  const name = window.prompt('저장할 이름을 입력하세요 (예: 2026 1학기 중간고사)', '');
+  const defaultName = currentSaveMeta?.name ? `${currentSaveMeta.name} 복사본` : '';
+  const name = window.prompt('저장할 이름을 입력하세요 (예: 2026 1학기 중간고사)', defaultName);
   if (!name || !name.trim()) return;
+  const trimmed = name.trim();
   try {
-    await saveNamed(name.trim(), buildSaveSnapshot(state));
-    toast(`✅ "${name.trim()}" 이름으로 저장 완료`);
+    const id = await saveNamed(trimmed, buildSaveSnapshot(state));
+    setCurrentSaveMeta(id, trimmed);
+    await persistCurrentDocs();
+    toast(`✅ "${trimmed}" 이름으로 저장 완료`);
   } catch (e) {
     toast('저장 실패: ' + e.message, 4000);
     console.error(e);
@@ -1354,13 +1407,16 @@ async function loadNamedAndApply(id) {
   try {
     const snapshot = await loadNamed(id);
     if (!snapshot) { toast('데이터를 찾을 수 없습니다.'); return; }
+    const item = saveListCache.find(s => s.id === id);
     Object.assign(state, applySnapshotToState(snapshot));
     state.teachers = state.teachers.map(normalizeTeacherStrings);
     state.selectedCells = [];
     state.swapHistory = [];
+    setCurrentSaveMeta(id, item?.name ?? '이름 없는 저장본');
+    await persistCurrentDocs();
     rerenderAll();
     closeLoadModal();
-    toast('✅ 불러오기 완료');
+    toast(`✅ "${currentSaveMeta.name}" 불러오기 완료`);
   } catch (e) {
     toast('불러오기 실패: ' + e.message, 4000);
     console.error(e);
@@ -1372,6 +1428,7 @@ async function deleteNamedConfirm(id) {
   if (!confirm(`"${item?.name ?? ''}" 저장을 삭제할까요? 되돌릴 수 없습니다.`)) return;
   try {
     await deleteNamed(id);
+    if (currentSaveMeta?.id === id) clearCurrentSaveMeta();
     toast('삭제 완료');
     openLoadModal();
   } catch (e) {

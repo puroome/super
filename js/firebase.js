@@ -82,11 +82,20 @@ async function clearCurrentDocs() {
 }
 
 async function saveNamed(name, snapshot) {
-  await addDoc(collection(db, 'saves'), {
+  const ref = await addDoc(collection(db, 'saves'), {
     name,
     payload: JSON.stringify(snapshot),
     savedAt: serverTimestamp(),
   });
+  return ref.id;
+}
+
+async function updateNamed(id, name, snapshot) {
+  await setDoc(doc(db, 'saves', id), {
+    name,
+    payload: JSON.stringify(snapshot),
+    savedAt: serverTimestamp(),
+  }, { merge: true });
 }
 
 async function listSaves() {
@@ -109,5 +118,5 @@ export {
   loadRequirements, saveRequirements,
   loadAssignment, saveAssignment, updateFixedCells, parseAssignment,
   clearCurrentDocs,
-  saveNamed, listSaves, loadNamed, deleteNamed,
+  saveNamed, updateNamed, listSaves, loadNamed, deleteNamed,
 };

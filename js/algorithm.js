@@ -875,6 +875,7 @@ function buildSaveSnapshot(state) {
   return {
     teachers: state.teachers,
     rooms: state.rooms,
+    roomMeta: state.roomMeta ?? [],
     roles: state.roles,
     examDays: state.examDays,
     requirements: state.requirements,
@@ -893,9 +894,11 @@ function buildSaveSnapshot(state) {
 
 function applySnapshotToState(snapshot) {
   const a = snapshot.assignment;
+  const rooms = snapshot.rooms ?? [];
   return {
     teachers: snapshot.teachers ?? [],
-    rooms: snapshot.rooms ?? [],
+    rooms,
+    roomMeta: snapshot.roomMeta ?? rooms.map(name => ({ name, grade: null, isAssistant: false })),
     roles: snapshot.roles ?? [],
     examDays: snapshot.examDays ?? [],
     requirements: snapshot.requirements ?? [],
@@ -912,7 +915,7 @@ function applySnapshotToState(snapshot) {
 
 function emptyState() {
   return {
-    teachers: [], rooms: [], roles: [], examDays: [],
+    teachers: [], rooms: [], roomMeta: [], roles: [], examDays: [],
     requirements: [], roomRequirements: [],
     excludedCells: {}, preFixed: {},
     data: null, fixedCells: {}, workload: [], roleCounts: [], slots: [],
