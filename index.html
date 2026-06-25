@@ -91,7 +91,7 @@
             <input type="file" accept=".csv" onchange="handleRoomCSV(event)" style="display:none">
           </label>
           <button class="btn-csv-download" onclick="downloadRoomCSVTemplate()">고사실 CSV 받기</button>
-          <button class="btn-danger btn-sm" onclick="resetSection('examAndRooms')">🗑 초기화</button>
+          <button class="btn-danger btn-sm" onclick="resetSection('examAndRooms')">초기화</button>
         </div>
         <p class="csv-hint" style="margin-bottom:8px"><b>고사실 CSV 열: 고사실명, 부감독</b><br>
           [부감독]열에 값이 있으면 부감독, 비우면 정감독</p>
@@ -131,7 +131,7 @@
         </label>
         <button class="btn-csv-download" onclick="downloadTeacherCSVTemplate()">CSV 양식 받기</button>
         <button class="btn-outline" onclick="openPrevWorkloadPicker(this)">📊 이전누적강도 불러오기</button>
-        <button class="btn-danger btn-sm" onclick="resetSection('teachers')">🗑 초기화</button>
+        <button class="btn-danger btn-sm" onclick="resetSection('teachers')">초기화</button>
       </div>
       <p class="csv-hint" style="margin-bottom:6px"><b>감독교사 CSV 열 : 이름, 이전누적강도, 제외 고사실, 제외시간, 고정시간, 감독유형</b><br>
       제외시간, 고정시간, 감독유형은 [자동배정]탭에서 직접 입력가능</p>
@@ -159,7 +159,7 @@
         <input type="file" accept=".csv" onchange="handleRequirementsCSV(event)" style="display:none">
       </label>
       <button class="btn-csv-download" onclick="downloadRequirementsCSVTemplate()">CSV 양식 받기</button>
-      <button class="btn-danger btn-sm" onclick="resetSection('requirements')">🗑 초기화</button>
+      <button class="btn-danger btn-sm" onclick="resetSection('requirements')">초기화</button>
     </div>
     <div id="req-table-wrap"></div>
   </div>
