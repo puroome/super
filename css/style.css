@@ -65,6 +65,16 @@ header .header-actions { margin-left: auto; display: flex; gap: 8px; }
 .tab-btn.active { background: var(--bg); color: var(--text); font-weight: 700; }
 .tab-btn:disabled { opacity: .4; cursor: not-allowed; pointer-events: none; }
 
+.save-badge {
+  margin-left: 8px;
+  display: flex;
+  align-items: center;
+  padding: 8px 18px;
+  font-size: 13px;
+  color: #ffd54f;
+  white-space: nowrap;
+}
+
 .tab-panel { display: none; padding: 16px; }
 .tab-panel.active { display: block; }
 

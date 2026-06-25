@@ -58,20 +58,24 @@ let gridSlots = [];
 // - 다른 이름 저장: 새 저장본 생성 후 그 저장본을 현재 작업본으로 지정
 const CURRENT_SAVE_META_KEY = 'examSupervisor.currentSaveMeta';
 let currentSaveMeta = readCurrentSaveMeta();
+renderSaveBadge();
 
 function readCurrentSaveMeta() {
   try {
     const raw = window.localStorage?.getItem(CURRENT_SAVE_META_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return parsed?.id && parsed?.name ? { id: parsed.id, name: parsed.name } : null;
+    return parsed?.id && parsed?.name ? { id: parsed.id, name: parsed.name, savedAt: parsed.savedAt ?? null } : null;
   } catch (e) {
     return null;
   }
 }
 
-function setCurrentSaveMeta(id, name) {
-  currentSaveMeta = id && name ? { id, name } : null;
+// savedAt: Date 객체(저장 시각). 생략하면 지금 시각으로 기록.
+function setCurrentSaveMeta(id, name, savedAt) {
+  currentSaveMeta = id && name
+    ? { id, name, savedAt: (savedAt instanceof Date ? savedAt : new Date()).toISOString() }
+    : null;
   try {
     if (currentSaveMeta) {
       window.localStorage?.setItem(CURRENT_SAVE_META_KEY, JSON.stringify(currentSaveMeta));
@@ -79,10 +83,20 @@ function setCurrentSaveMeta(id, name) {
       window.localStorage?.removeItem(CURRENT_SAVE_META_KEY);
     }
   } catch (e) { /* localStorage 사용 불가 시 무시 */ }
+  renderSaveBadge();
 }
 
 function clearCurrentSaveMeta() {
   setCurrentSaveMeta(null, null);
+}
+
+// 탭 줄 오른쪽(감독표 탭 옆)에 현재 작업 중인 저장본 이름·시각 표시. 저장 기록 없으면 빈 칸.
+function renderSaveBadge() {
+  const el = document.getElementById('current-save-badge');
+  if (!el) return;
+  if (!currentSaveMeta?.name) { el.textContent = ''; return; }
+  const dateStr = currentSaveMeta.savedAt ? formatDateTimeKo(new Date(currentSaveMeta.savedAt)) : '';
+  el.innerHTML = `<b>${escapeHtml(currentSaveMeta.name)}</b>${dateStr ? `<span style="margin-left:10px">${dateStr}</span>` : ''}`;
 }
 
 // ─── 탭 전환 ─────────────────────────────────────────────────────────────────
@@ -653,7 +667,7 @@ function computeCellVisual(i, j, key) {
   const isManualFixed = !!state.fixedCells[i]?.[j];
 
   if (isExcluded) {
-    return { bg: '#fbdada', text: 'X', title: '배정 제외' };
+    return { bg: '#fbdada', text: 'X', title: '제외 시간 — [제외] 모드로 클릭/드래그하면 해제' };
   }
 
   if (fixedObj) {
@@ -661,13 +675,13 @@ function computeCellVisual(i, j, key) {
     const roleLabel = fixedObj.role === 1 ? '정' : fixedObj.role === 2 ? '부' : '?';
     const text = roomText || roleLabel;
     const title = fixedObj.role
-      ? `고정(시간) - ${fixedObj.role === 1 ? '정감독' : '부감독'}`
-      : '⚠️ 우클릭한 뒤 1(정) 또는 2(부) 입력';
+      ? `고정(시간) - ${fixedObj.role === 1 ? '정감독' : '부감독'} ([고정(시간)] 모드에서 더블클릭 또는 우클릭: 유형 변경 / 클릭: 해제)`
+      : '⚠️ 고정(시간) - 유형 미입력! [고정(시간)] 모드에서 이 칸을 더블클릭 또는 우클릭해 1(정감독) 또는 2(부감독)를 입력하세요';
     return { bg: '#cfe3fa', text, title };
   }
 
   const { bg, text } = gridCellDisplay(rawCell, isManualFixed, isManualFixed);
-  const title = isManualFixed ? '고정됨 (우클릭으로 해제)' : '원클릭(교환), 더블클릭(감독실+시간 고정)';
+  const title = isManualFixed ? '고정됨 (더블클릭으로 해제)' : '클릭: 선택(swap용) / 더블클릭: 고정';
   return { bg, text, title };
 }
 
@@ -1341,6 +1355,7 @@ async function saveAll() {
     const snapshot = buildSaveSnapshot(state);
     await updateNamed(currentSaveMeta.id, currentSaveMeta.name, snapshot);
     await persistCurrentDocs();
+    setCurrentSaveMeta(currentSaveMeta.id, currentSaveMeta.name, new Date());
     toast(`✅ "${currentSaveMeta.name}" 저장 완료`);
   } catch (e) {
     toast('저장 실패: ' + e.message, 4000);
@@ -1390,13 +1405,16 @@ async function saveAsNamed() {
 
 let saveListCache = [];
 
+function formatDateTimeKo(date) {
+  if (!date || isNaN(date.getTime())) return '';
+  return date.toLocaleString('ko-KR', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+}
+
 function formatSaveDate(ts) {
   try {
-    if (ts?.toDate) {
-      return ts.toDate().toLocaleString('ko-KR', {
-        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-      });
-    }
+    if (ts?.toDate) return formatDateTimeKo(ts.toDate());
   } catch (e) { /* 무시 */ }
   return '';
 }
@@ -1448,7 +1466,7 @@ async function loadNamedAndApply(id) {
     state.teachers = state.teachers.map(normalizeTeacherStrings);
     state.selectedCells = [];
     state.swapHistory = [];
-    setCurrentSaveMeta(id, item?.name ?? '이름 없는 저장본');
+    setCurrentSaveMeta(id, item?.name ?? '이름 없는 저장본', item?.savedAt?.toDate ? item.savedAt.toDate() : new Date());
     await persistCurrentDocs();
     rerenderAll();
     closeLoadModal();
