@@ -84,7 +84,7 @@
       <!-- 시험일 및 고사실 -->
       <div class="card basic-exam-card">
         <h2>📅 시험일 및 고사실</h2>
-        <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn-primary" onclick="addExamDay()">+ 날짜 추가</button>
           <label class="btn-csv-upload">
             고사실CSV 올리기
@@ -176,7 +176,7 @@
       <button id="btn-exclude-mode" class="btn-outline btn-mode" onclick="toggleExcludeMode()">🚫 제외</button>
       <button id="btn-fixed-mode" class="btn-outline btn-mode" onclick="toggleFixedMode()">📌 고정 (only 시간)</button>
       <button id="btn-swap" class="btn-outline" onclick="doSwap()" disabled>⇄ 선택 셀 교환</button>
-      <button class="btn-danger" onclick="resetSection('assign')">🗑 초기화</button>
+      <button class="btn-danger" onclick="resetSection('assign')">초기화</button>
       <span style="color:#7a8599;font-size:11px">
         원클릭(교환), 더블클릭(감독실&시간 고정)
       </span>
