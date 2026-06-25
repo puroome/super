@@ -9,6 +9,7 @@ import {
   parseUnavailableSlots, parseRequiredSlots,
   pruneRoomRequirements, aggregateRoomRequirements,
   removeRoleFromRequirements, removeDayFromRequirements,
+  computeTabLocks,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
@@ -95,10 +96,29 @@ function initTabs() {
       document.getElementById(btn.dataset.tab).classList.add('active');
       if (btn.dataset.tab === 'tab-req') renderRequirementsTab();
       if (btn.dataset.tab === 'tab-assign') { seedGridFromTeacherText(); renderAssignGrid(); }
-      if (btn.dataset.tab === 'tab-table') renderSupervisorTable();
+      if (btn.dataset.tab === 'tab-table') { renderSupervisorTable(); renderPersonalSelect(); }
       // (배정설정 탭 복원됨 — roomRequirements는 CSV 업로드 또는 화면 편집으로 설정)
     });
   });
+}
+
+// 탭 위계 잠금: 이전 단계 데이터가 없으면 다음 탭 버튼을 비활성화.
+// 교사/고사실/시험일/배정설정/자동배정 데이터가 바뀔 때마다 항상 호출되는
+// render 함수들(renderTeacherList 등) 안에서 호출하므로, 입력 경로(직접입력/CSV/초기화/불러오기)와
+// 상관없이 항상 최신 상태로 갱신된다.
+function updateTabLocks() {
+  const locks = computeTabLocks(state);
+
+  Object.entries(locks).forEach(([tabId, locked]) => {
+    const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+    if (btn) btn.disabled = locked;
+  });
+
+  // 지금 보고 있는 탭이 방금 잠겼다면(전체초기화/불러오기 등) 기본정보 탭으로 강제 이동
+  const activeBtn = document.querySelector('.tab-btn.active');
+  if (activeBtn && locks[activeBtn.dataset.tab]) {
+    document.querySelector('.tab-btn[data-tab="tab-basic"]').click();
+  }
 }
 
 // ─── 입력 형식 정규화 ─────────────────────────────────────────────────────────
@@ -133,6 +153,7 @@ function renderBasicTab() {
 }
 
 function renderTeacherList() {
+  updateTabLocks();
   const el = document.getElementById('teacher-list-grid');
   if (!el) return;
   if (!state.teachers.length) {
@@ -150,6 +171,7 @@ function renderTeacherList() {
 }
 
 function renderRoomList() {
+  updateTabLocks();
   const el = document.getElementById('room-list');
   if (!el) return;
   if (!state.roomMeta.length) {
@@ -202,21 +224,22 @@ function renderRoleList() {
 }
 
 function renderExamDayList() {
+  updateTabLocks();
   const el = document.getElementById('examday-list');
   el.innerHTML = state.examDays.map((d, i) => {
     return `
       <tr>
-        <td><input type="date" value="${d.date}" onchange="updateExamDay(${i},'date',this.value)"></td>
-        <td><input type="number" value="${d.startPeriod}" onchange="updateExamDay(${i},'startPeriod',+this.value)" style="width:44px;text-align:center;-webkit-appearance:none;-moz-appearance:textfield" min="1" max="9"></td>
-        <td><input type="number" value="${d.endPeriod}" onchange="updateExamDay(${i},'endPeriod',+this.value)" style="width:44px;text-align:center;-webkit-appearance:none;-moz-appearance:textfield" min="1" max="9"></td>
+        <td><input type="date" value="${d.date}" onblur="updateExamDay(${i},'date',this.value)"></td>
+        <td><input type="number" value="${d.startPeriod ?? ''}" onchange="updateExamDay(${i},'startPeriod',+this.value)" onfocus="this.select()" style="width:44px;text-align:center;-webkit-appearance:none;-moz-appearance:textfield" min="1" max="9"></td>
+        <td><input type="number" value="${d.endPeriod ?? ''}" onchange="updateExamDay(${i},'endPeriod',+this.value)" onfocus="this.select()" style="width:44px;text-align:center;-webkit-appearance:none;-moz-appearance:textfield" min="1" max="9"></td>
         <td><button onclick="removeExamDay(${i})">삭제</button></td>
       </tr>`;
   }).join('');
 }
-
 // ─── 탭2: 배정설정 ───────────────────────────────────────────────────────────
 
 function renderRequirementsTab() {
+  updateTabLocks();
   const wrap = document.getElementById('req-table-wrap');
   if (!wrap) return;
 
@@ -361,8 +384,8 @@ function renderRequirementsTab() {
     // data-col 속성으로 논리적 열 번호 읽기 (rowspan 어긋남 방지)
     const col = parseInt(cell.dataset.col ?? '-1', 10);
     const rowIdx = Array.from(table.querySelectorAll('tbody tr')).indexOf(tr);
-    // col < 2: 날짜(0)·교시(1) 열은 포커스 행 테두리 미적용 (교시는 헤더 강조만)
-    if (rowIdx < 0 || col < 1) { reqClearFocus(table); lastFR = -1; lastFC = -1; return; }
+    // col < 2: 날짜(0)·교시(1) 열은 고정열이라 포커스 자체를 적용하지 않음
+    if (rowIdx < 0 || col < 2) { reqClearFocus(table); lastFR = -1; lastFC = -1; return; }
     if (rowIdx === lastFR && col === lastFC) return;
     lastFR = rowIdx; lastFC = col;
     reqApplyFocus(table, allColHeaders, rowIdx, col);
@@ -630,7 +653,7 @@ function computeCellVisual(i, j, key) {
   const isManualFixed = !!state.fixedCells[i]?.[j];
 
   if (isExcluded) {
-    return { bg: '#fbdada', text: 'X', title: '제외 시간 — [제외] 모드로 클릭/드래그하면 해제' };
+    return { bg: '#fbdada', text: 'X', title: '배정 제외' };
   }
 
   if (fixedObj) {
@@ -638,13 +661,13 @@ function computeCellVisual(i, j, key) {
     const roleLabel = fixedObj.role === 1 ? '정' : fixedObj.role === 2 ? '부' : '?';
     const text = roomText || roleLabel;
     const title = fixedObj.role
-      ? `고정(시간) - ${fixedObj.role === 1 ? '정감독' : '부감독'} ([고정(시간)] 모드에서 더블클릭: 유형 변경 / 클릭: 해제)`
-      : '⚠️ 고정(시간) - 유형 미입력! [고정(시간)] 모드에서 이 칸을 더블클릭해 1(정감독) 또는 2(부감독)를 입력하세요';
+      ? `고정(시간) - ${fixedObj.role === 1 ? '정감독' : '부감독'}`
+      : '⚠️ 우클릭한 뒤 1(정) 또는 2(부) 입력';
     return { bg: '#cfe3fa', text, title };
   }
 
   const { bg, text } = gridCellDisplay(rawCell, isManualFixed, isManualFixed);
-  const title = isManualFixed ? '고정됨 (더블클릭으로 해제)' : '클릭: 선택(swap용) / 더블클릭: 고정';
+  const title = isManualFixed ? '고정됨 (우클릭으로 해제)' : '원클릭(교환), 더블클릭(감독실+시간 고정)';
   return { bg, text, title };
 }
 
@@ -761,6 +784,7 @@ function setupGridModeListeners() {
   gridModeListenersBound = true;
 
   wrap.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return; // 좌클릭만 처리 — 우클릭/중간클릭은 토글 기능 없음
     if (!state.gridMode) return;
     const td = e.target.closest('.grid-cell');
     if (!td) return;
@@ -797,9 +821,21 @@ function setupGridModeListeners() {
   });
 
   document.addEventListener('mouseup', () => { state.dragActive = false; });
+
+  // 고정(시간) 모드일 때만: 이미 고정 지정된(파란) 칸 위 우클릭 → 더블클릭과 동일하게 유형(1/2) 입력창을 바로 띄움.
+  // 다른 모드/일반 칸에서는 우클릭이 아무 동작도 하지 않음 (body의 오른쪽 클릭 메뉴 차단은 그대로 유지).
+  wrap.addEventListener('contextmenu', (e) => {
+    if (state.gridMode !== 'fixed') return;
+    const td = e.target.closest('.grid-cell');
+    if (!td) return;
+    e.preventDefault();
+    const i = +td.dataset.i, j = +td.dataset.j, key = td.dataset.key;
+    if (state.preFixed[i]?.[key]) startFixedRoleEdit(i, j, key);
+  });
 }
 
 function renderAssignGrid() {
+  updateTabLocks();
   setupGridModeListeners();
 
   const slots = buildSlots(state.examDays);
@@ -869,11 +905,14 @@ function renderAssignGrid() {
     .map((h, i) => `<span class="tag">${h.label} <button onclick="undoSwap(${i})">×</button></span>`)
     .join('');
 
-  // ── sticky-right 열 right 값 동적 계산 ──────────────────────────────
-  // 렌더 직후 각 열 너비를 읽어서 right 값을 역순으로 누적 적용
+// ── sticky-right 열 right 값 계산 ──────────────────────────────────
+  // ponytail: offsetWidth 측정 대신 CSS로 못박은 44px 고정값 사용.
+  //   측정 방식은 display:none 탭에서 렌더될 때 offsetWidth=0이 돼서
+  //   가로 스크롤 시 고정열이 겹치거나 벌어지는 버그 유발.
   requestAnimationFrame(() => {
     const gridEl = document.querySelector('#assign-grid-scroll .assign-grid');
     if (!gridEl) return;
+    const colW = 44;
     const headerCells = Array.from(gridEl.querySelectorAll('thead tr th'));
     const stickyRightThs = [];
     for (let k = headerCells.length - 1; k >= 0; k--) {
@@ -883,18 +922,15 @@ function renderAssignGrid() {
     let accumulated = 0;
     for (let k = stickyRightThs.length - 1; k >= 0; k--) {
       const th = stickyRightThs[k];
-      const w = th.offsetWidth;
       th.style.right = accumulated + 'px';
-      // 같은 열 인덱스의 모든 td에도 적용
-      const colIdx = Array.from(headerCells).indexOf(th);
-      gridEl.querySelectorAll(`tbody tr`).forEach(tr => {
+      const colIdx = headerCells.indexOf(th);
+      gridEl.querySelectorAll('tbody tr').forEach(tr => {
         const td = tr.cells[colIdx];
-        if (td) { td.style.right = accumulated + 'px'; }
+        if (td) td.style.right = accumulated + 'px';
       });
-      accumulated += w;
+      accumulated += colW;
     }
   });
-
   // ── 마우스휠 내부 스크롤 ──────────────────────────────────────────────
   const scrollEl = document.getElementById('assign-grid-scroll');
   if (scrollEl) {
@@ -1506,11 +1542,25 @@ function parseCSVLine(line) {
   return out.map(s => s.trim());
 }
 
+function checkCSVHeader(text, expectedHeader, kind) {
+  const firstLine = (text.split('\n')[0] || '').replace(/^\uFEFF/, '').trim();
+  if (firstLine !== expectedHeader) {
+    showErrorModal({
+      title: `${kind} CSV 형식 오류`,
+      desc: `올리신 파일이 ${kind} CSV 양식이 아닌 것 같습니다. 다른 종류의 CSV 파일을 올리신 건 아닌지 확인해주세요.`,
+      errors: [`예상 헤더: ${expectedHeader}`, `실제 헤더: ${firstLine || '(비어있음)'}`],
+      fix: `'${kind} CSV 받기' 버튼으로 올바른 양식을 다시 받아 사용해주세요.`,
+    });
+    return false;
+  }
+  return true;
+}
+
 function importTeacherCSV(text) {
+  if (!checkCSVHeader(text, '이름,이전누적업무강도,제외고사실,제외시간,고정시간,감독유형', '감독교사')) return;
   const lines = text.trim().split('\n');
   const dataLines = lines.slice(1).filter(l => l.trim());
   const errors = [];
-
   const teachers = dataLines.map((line, rowIdx) => {
     const parts = parseCSVLine(line);
     const [name, prevWorkload, forbiddenRooms, unavailableSlots, requiredSlotStr, requiredRoleStr] = parts;
@@ -1577,6 +1627,7 @@ function importTeacherCSV(text) {
 }
 
 function importRoomCSV(text) {
+  if (!checkCSVHeader(text, '고사실명,부감독', '고사실')) return;
   const lines = text.trim().split('\n');
   const dataLines = lines.slice(1).filter(l => l.trim());
 
@@ -1722,7 +1773,7 @@ window.addRole = () => {
   renderRoleList();
 };
 window.addExamDay = () => {
-  state.examDays.push({ date: '', startPeriod: 1, endPeriod: 4 });
+  state.examDays.push({ date: '', startPeriod: 1, endPeriod: null });
   renderExamDayList();
 };
 
@@ -1809,20 +1860,22 @@ window.printAllPersonal = () => printAllPersonal({
 
 window.handleTeacherCSV = (e) => {
   const file = e.target.files[0];
+  e.target.value = ''; // ponytail: 같은 이름 파일 재업로드 허용 — 안 비우면 change 이벤트가 안 떠서 무반응
   if (!file) return;
   file.text().then(importTeacherCSV);
 };
 window.handleRoomCSV = (e) => {
   const file = e.target.files[0];
+  e.target.value = ''; // ponytail: 위와 동일 — 입력칸을 비워 같은 파일 재선택 시 change 재발생
   if (!file) return;
   file.text().then(importRoomCSV);
 };
 window.handleRequirementsCSV = (e) => {
   const file = e.target.files[0];
+  e.target.value = ''; // ponytail: 위와 동일
   if (!file) return;
   file.text().then(importRequirementsCSV);
 };
-
 window.openPrevWorkloadPicker = async (thEl) => {
   document.getElementById('prev-workload-picker')?.remove();
   const saves = await listSaves();

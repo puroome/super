@@ -18,12 +18,16 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+const DEFAULT_ROLES = [{ name: '정감독', workload: 100 }, { name: '부감독', workload: 50, active: true }];
+
 async function loadBasic() {
   const snap = await getDoc(doc(db, 'config', 'basic'));
-  if (!snap.exists()) return { teachers: [], rooms: [], roles: [], examDays: [] };
-  return snap.data();
+  if (!snap.exists()) return { teachers: [], rooms: [], roomMeta: [], roles: DEFAULT_ROLES, examDays: [] };
+  const data = snap.data();
+  // ponytail: roles가 빈 배열로 저장된 경우 기본값으로 복구
+  if (!data.roles?.length) data.roles = DEFAULT_ROLES;
+  return data;
 }
-
 async function saveBasic(basic) {
   await setDoc(doc(db, 'config', 'basic'), { ...basic, updatedAt: serverTimestamp() });
 }

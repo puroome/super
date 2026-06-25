@@ -63,6 +63,7 @@ header .header-actions { margin-left: auto; display: flex; gap: 8px; }
 }
 .tab-btn:hover { background: rgba(255,255,255,.4); }
 .tab-btn.active { background: var(--bg); color: var(--text); font-weight: 700; }
+.tab-btn:disabled { opacity: .4; cursor: not-allowed; pointer-events: none; }
 
 .tab-panel { display: none; padding: 16px; }
 .tab-panel.active { display: block; }
@@ -400,6 +401,8 @@ tbody .req-sticky-period {
   z-index: 2;
   background: var(--accent);
   color: white;
+  box-sizing: border-box;
+  width: 44px; min-width: 44px; max-width: 44px;
 }
 .assign-grid td.sticky-right {
   background: #eef0f8;
@@ -408,7 +411,6 @@ tbody .req-sticky-period {
   cursor: default;
 }
 .assign-grid th.sticky-right { z-index: 4; border-left: 1px solid #8899bb; }
-
 /* 누적강도 앞: 굵은 경계선 (한 세트와 구분) */
 .assign-grid th.sticky-right-sep { border-left: 2px solid #6070a0 !important; }
 .assign-grid td.sticky-right-sep { border-left: 2px solid #8899bb !important; }

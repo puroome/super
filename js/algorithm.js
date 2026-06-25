@@ -869,6 +869,19 @@ function validateAssignment(slots, requirements) {
   return { ok: true, errors: [] };
 }
 
+// ─── 탭 위계 잠금 ────────────────────────────────────────────────────────────
+// 이전 단계 데이터가 없으면 다음 탭을 잠근다. UI(DOM)는 모르는 순수 함수라 테스트하기 쉽다.
+function computeTabLocks(state) {
+  const hasBasic = state.teachers.length > 0 && state.rooms.length > 0 && state.examDays.length > 0;
+  const hasReq = state.roomRequirements.length > 0;
+  const hasAssign = !!state.data;
+  return {
+    'tab-req': !hasBasic,
+    'tab-assign': !(hasBasic && hasReq),
+    'tab-table': !(hasBasic && hasReq && hasAssign),
+  };
+}
+
 // ─── 스냅샷 ──────────────────────────────────────────────────────────────────
 
 function buildSaveSnapshot(state) {
@@ -915,13 +928,14 @@ function applySnapshotToState(snapshot) {
 
 function emptyState() {
   return {
-    teachers: [], rooms: [], roomMeta: [], roles: [], examDays: [],
+    teachers: [], rooms: [], roomMeta: [],
+    roles: [{ name: '정감독', workload: 100 }, { name: '부감독', workload: 50, active: true }],
+    examDays: [],
     requirements: [], roomRequirements: [],
     excludedCells: {}, preFixed: {},
     data: null, fixedCells: {}, workload: [], roleCounts: [], slots: [],
   };
 }
-
 export {
   assignAll,
   swapCells,
@@ -945,4 +959,5 @@ export {
   aggregateRoomRequirements,
   removeRoleFromRequirements,
   removeDayFromRequirements,
+  computeTabLocks,
 };
