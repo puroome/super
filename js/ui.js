@@ -41,6 +41,8 @@ const state = {
   slots: [],
   selectedCells: [],
   swapHistory: [],
+  flashCells: [],       // 교환 직후 점멸 표시할 칸들 ({i,j})
+  assignBaseline: null, // 자동배정 직후 상태 스냅샷 (변경 초기화용)
   // ponytail: 자동배정 탭 그리드에서 직접 지정하는 제외시간/고정(시간) 상태.
   // key: 교사i(1-based) -> { "dayIdx_period": true(제외) | {role:null|1|2}(고정) }
   excludedCells: {},
@@ -179,8 +181,8 @@ function renderTeacherList() {
     <div class="teacher-card">
       <input name="name" value="${escapeHtml(t.name)}" placeholder="이름" style="${t.name.length > 3 ? 'font-size:' + Math.max(9.6, 14.4 * 3 / t.name.length) + 'px' : ''}" onchange="updateTeacher(${i},'name',this.value);this.style.fontSize=this.value.length>3?Math.max(9.6,14.4*3/this.value.length)+'px':''">
       <input name="workload" type="number" value="${t.prevWorkload > 0 ? t.prevWorkload : ''}" placeholder="" title="이전누적강도" min="0" step="1" pattern="[0-9]*" inputmode="numeric" onchange="updateTeacher(${i},'prevWorkload',+this.value)" onkeypress="return event.charCode>=48&&event.charCode<=57">
-      <input name="forbidden" value="${escapeHtml(t.forbiddenRooms ?? '')}" placeholder="" title="제외 고사실 (예: 101)" onchange="updateTeacherField(${i},'forbiddenRooms',this)">
-      <button class="teacher-card-del" onclick="removeTeacher(${i})" title="삭제">×</button>
+      <input name="forbidden" value="${escapeHtml(t.forbiddenRooms ?? '')}" placeholder="" title="감독 제외 고사실" onchange="updateTeacherField(${i},'forbiddenRooms',this)">
+      <button class="teacher-card-del" onclick="removeTeacher(${i})">×</button>
     </div>
   `).join('');
 }
@@ -216,7 +218,6 @@ function renderRoleList() {
       <td>
         <input type="number" value="${assistWorkload}"
           placeholder=""
-          title="부감독 업무강도 (정감독=100 기준)"
           style="width:60px;-moz-appearance:textfield;text-align:center"
           ${assistActive ? '' : 'disabled'}
           onchange="updateAssistWorkload(+this.value)"
@@ -225,7 +226,7 @@ function renderRoleList() {
       <td>
         <button class="${assistActive ? 'btn-outline btn-sm' : 'btn-primary btn-sm'}"
           onclick="toggleAssistRole()"
-          style="white-space:nowrap">
+          style="white-space:nowrap;min-width:104px;${assistActive ? '' : 'border:1px solid transparent'}">
           ${assistActive ? '부감독 비활성화' : '부감독 활성화'}
         </button>
       </td>
@@ -351,7 +352,7 @@ function renderRequirementsTab() {
           data-color="${cellColor}"
           data-col="${ci + 2}"
           ondblclick="reqCellDblClick(this)"
-          title="더블클릭: 배치/미배치 전환"
+          title="   더블클릭: 배치/미배치 전환"
         ></td>`;
       });
 
@@ -668,7 +669,7 @@ function computeCellVisual(i, j, key) {
   const isManualFixed = !!state.fixedCells[i]?.[j];
 
   if (isExcluded) {
-    return { bg: '#fbdada', text: 'X', title: '제외 시간 — [제외] 모드로 클릭/드래그하면 해제' };
+    return { bg: '#fbdada', text: 'X', title: '   이 시간에 감독배정 제외' };
   }
 
   if (fixedObj) {
@@ -676,13 +677,13 @@ function computeCellVisual(i, j, key) {
     const roleLabel = fixedObj.role === 1 ? '정' : fixedObj.role === 2 ? '부' : '?';
     const text = roomText || roleLabel;
     const title = fixedObj.role
-      ? `고정(시간) - ${fixedObj.role === 1 ? '정감독' : '부감독'} ([고정(시간)] 모드에서 더블클릭 또는 우클릭: 유형 변경 / 클릭: 해제)`
-      : '⚠️ 고정(시간) - 유형 미입력! [고정(시간)] 모드에서 이 칸을 더블클릭 또는 우클릭해 1(정감독) 또는 2(부감독)를 입력하세요';
+      ? `   이 시간에 ${fixedObj.role === 1 ? '정감독' : '부감독'}으로 배정`
+      : '⚠️ 감독유형 미입력 (우클릭 후, 1(정감독) 또는 2(부감독) 입력)';
     return { bg: '#cfe3fa', text, title };
   }
 
   const { bg, text } = gridCellDisplay(rawCell, isManualFixed, isManualFixed);
-  const title = isManualFixed ? '고정됨 (더블클릭으로 해제)' : '클릭: 선택(swap용) / 더블클릭: 고정';
+  const title = isManualFixed ? '   고정 (고사실+시간)' : '   원클릭 : 교환  /  더블클릭 : 고정 (고사실+시간)';
   return { bg, text, title };
 }
 
@@ -853,6 +854,13 @@ function renderAssignGrid() {
   updateTabLocks();
   setupGridModeListeners();
 
+  // 다시 그리면 #assign-grid-scroll DOM이 새로 생겨 스크롤이 맨 위/왼쪽으로 튄다.
+  // 클릭(제외/고정/교환/셀선택) 후에도 보던 위치에 머물도록 직전 스크롤 위치를 기억해둔다.
+  const _prevScrollEl = document.getElementById('assign-grid-scroll');
+  const _prevScroll = _prevScrollEl
+    ? { top: _prevScrollEl.scrollTop, left: _prevScrollEl.scrollLeft }
+    : null;
+
   const slots = buildSlots(state.examDays);
   gridSlots = slots;
   const tCount = state.teachers.length;
@@ -899,7 +907,8 @@ function renderAssignGrid() {
         const key = slotKey(s.dayIdx, s.period);
         const { bg, text, title } = computeCellVisual(i, j, key);
         const selClass = state.selectedCells.some(c => c.i === i && c.j === j) ? ' selected-cell' : '';
-        return `<td class="grid-cell${selClass}" data-i="${i}" data-j="${j}" data-col="${idx + 3}" data-key="${key}" style="background:${bg}"
+        const flashClass = (state.flashCells ?? []).some(c => c.i === i && c.j === j) ? ' swap-flash' : '';
+        return `<td class="grid-cell${selClass}${flashClass}" data-i="${i}" data-j="${j}" data-col="${idx + 3}" data-key="${key}" style="background:${bg}"
           onclick="onCellClick(${i},${j})"
           ondblclick="onCellDblClick(${i},${j})"
           title="${title}"
@@ -913,6 +922,11 @@ function renderAssignGrid() {
 
   html += `</tbody></table></div>`;
   document.getElementById('assign-grid-wrap').innerHTML = html;
+  // 저장해둔 스크롤 위치 복원 (클릭해도 보던 위치 그대로)
+  if (_prevScroll) {
+    const el = document.getElementById('assign-grid-scroll');
+    if (el) { el.scrollTop = _prevScroll.top; el.scrollLeft = _prevScroll.left; }
+  }
   document.getElementById('btn-swap').disabled = state.selectedCells.length !== 2;
 
   const histEl = document.getElementById('swap-history');
@@ -1095,6 +1109,33 @@ function refreshAssignmentStats() {
     state.teachers.length, state.slots.length);
 }
 
+// ── 교환 직후 점멸: 우클릭 또는 Enter로 "확인"하기 전까지 빨간 테두리 깜박임 ──
+let _flashAck = null;
+function clearSwapFlash() {
+  if (_flashAck) {
+    document.removeEventListener('contextmenu', _flashAck, true);
+    document.removeEventListener('keydown', _flashAck, true);
+    _flashAck = null;
+  }
+  if (state.flashCells && state.flashCells.length) {
+    state.flashCells = [];
+    document.querySelectorAll('#assign-grid-wrap td.swap-flash')
+      .forEach(td => td.classList.remove('swap-flash'));
+  }
+}
+function flashSwappedCells(cells) {
+  clearSwapFlash();
+  state.flashCells = cells.map(c => ({ i: c.i, j: c.j }));
+  // 실제 클래스는 곧 이어지는 renderAssignGrid()에서 입혀진다.
+  _flashAck = (e) => {
+    if (e.type === 'keydown' && e.key !== 'Enter') return;
+    if (e.type === 'contextmenu') e.preventDefault(); // 확인 제스처이므로 브라우저 메뉴는 억제
+    clearSwapFlash();
+  };
+  document.addEventListener('contextmenu', _flashAck, true);
+  document.addEventListener('keydown', _flashAck, true);
+}
+
 function doSwap() {
   if (state.selectedCells.length !== 2) return;
   const [c1, c2] = state.selectedCells;
@@ -1122,8 +1163,8 @@ function doSwap() {
     if (!state.swapHistory) state.swapHistory = [];
     state.swapHistory.push({ before, label: `${getName(c1)} ${getSlot(c1)} ↔ ${getName(c2)} ${getSlot(c2)}` });
     state.selectedCells = [];
+    flashSwappedCells(cells);   // 바뀐 칸 점멸 (우클릭/Enter로 확인 시 멈춤)
     renderAssignGrid();
-    toast('교환 완료');
   };
 
   // classifySwap에 제외/고정 정보 전달 (다른 교시 교환의 "받을 자리가 비었나" 검사용)
@@ -1342,6 +1383,8 @@ async function runAssign() {
     state.workload = result.workload;
     state.roleCounts = result.roleCounts;
     state.swapHistory = [];
+    clearSwapFlash();
+    snapshotAssignBaseline();   // "변경 초기화"의 기준점(자동배정 직후 상태) 저장
 
     // 감독 없는 고사실 검사 — 교사가 부족하면 방이 그리드에서 조용히 사라진다.
     // "완료"라고 말하기 전에 비어버린 고사실을 콕 집어 경고한다.
@@ -1416,6 +1459,65 @@ async function runAssign() {
   }
 }
 
+// "변경 초기화"의 기준점: 자동배정 직후의 배정/제외/고정 상태를 깊은 복사로 보관.
+function snapshotAssignBaseline() {
+  const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
+  state.assignBaseline = {
+    data: clone(state.data),
+    excludedCells: clone(state.excludedCells),
+    preFixed: clone(state.preFixed),
+    fixedCells: clone(state.fixedCells),
+  };
+}
+
+// 자동배정 실행 이후에 한 변경(교환·제외시간·고정시간 등)을 모두 취소하고
+// 자동배정 직후 상태로 되돌린다.
+window.resetAssignChanges = () => {
+  const base = state.assignBaseline;
+  const snap = (o) => JSON.stringify({
+    data: o.data, excludedCells: o.excludedCells, preFixed: o.preFixed, fixedCells: o.fixedCells,
+  });
+  const unchanged = !base || snap(state) === snap(base);
+  if (unchanged) { alert('변경사항이 없습니다.'); return; }
+  if (!confirm('자동배정 후 시행한 모든 변경사항을 취소합니다.')) return;
+
+  const clone = (v) => JSON.parse(JSON.stringify(v ?? null));
+  state.data = clone(base.data);
+  state.excludedCells = clone(base.excludedCells);
+  state.preFixed = clone(base.preFixed);
+  state.fixedCells = clone(base.fixedCells);
+  state.swapHistory = [];
+  state.selectedCells = [];
+  clearSwapFlash();
+  refreshAssignmentStats();
+  renderAssignGrid();
+  toast('자동배정 직후 상태로 되돌렸습니다');
+};
+
+// 배정 취소: 배정된 고사실 값을 모두 비워 "감독교사 CSV만 업로드한 상태"로 되돌린다.
+//   - 제외(빨강, excludedCells) · 고정시간(파랑, preFixed) 은 유지
+//   - 파랑 칸의 고사실 배정값도 비움(시간/유형 고정은 유지 → '정'/'부'/'?'로 표시)
+//   - 회색(감독실+시간 고정, fixedCells)은 CSV에 없는 수동 고정이므로 함께 해제
+window.cancelAssignment = () => {
+  const hasAssignment = (state.data ?? []).some(row =>
+    Array.isArray(row) && row.some(v => { const s = String(v ?? ''); return s !== '' && s !== '0'; })
+  ) || Object.keys(state.fixedCells ?? {}).length > 0;
+if (!hasAssignment) { alert('취소할 배정이 없습니다.'); return; }
+  if (!confirm('자동배정된 결과를 취소합니다.')) return;
+
+  // 모든 칸의 배정 고사실 값 비우기 (빨강은 excludedCells, 파랑은 preFixed 맵으로 색 유지)
+  if (Array.isArray(state.data)) {
+    state.data = state.data.map(row => Array.isArray(row) ? row.map(() => '') : row);
+  }
+  state.fixedCells = {};      // 회색(시간+고사실) 수동 고정 해제
+  state.swapHistory = [];
+  state.selectedCells = [];
+  clearSwapFlash();
+  refreshAssignmentStats();
+  renderAssignGrid();
+  toast('배정을 취소했습니다 (CSV 정보만 남김)');
+};
+
 // ─── 초기 데이터 로드 ─────────────────────────────────────────────────────────
 
 async function loadAll() {
@@ -1447,6 +1549,8 @@ async function loadAll() {
       state.workload = parsed.workload;
       state.roleCounts = parsed.roleCounts;
       state.slots = parsed.slots;
+      clearSwapFlash();
+      snapshotAssignBaseline();   // 불러온 시점도 "변경 초기화" 기준점으로 저장
     }
 
     renderBasicTab();
@@ -1600,6 +1704,8 @@ async function loadNamedAndApply(id) {
     state.teachers = state.teachers.map(normalizeTeacherStrings);
     state.selectedCells = [];
     state.swapHistory = [];
+    clearSwapFlash();
+    snapshotAssignBaseline();   // 불러온 시점도 "변경 초기화" 기준점으로 저장
     setCurrentSaveMeta(id, item?.name ?? '이름 없는 저장본', item?.savedAt?.toDate ? item.savedAt.toDate() : new Date());
     await persistCurrentDocs();
     rerenderAll();
@@ -1669,6 +1775,7 @@ function resetSection(section) {
     state.slots = []; state.selectedCells = []; state.swapHistory = [];
     state.excludedCells = {}; state.preFixed = {};
     state.gridMode = null; state.dragActive = false;
+    state.assignBaseline = null; clearSwapFlash();
     renderAssignGrid();
   }
   toast(`${labels[section] ?? section} 초기화 완료`);

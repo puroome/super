@@ -151,7 +151,7 @@
   <div class="card">
     <h2>📝 시험장 운영 고사실 설정</h2>
     <p style="margin-bottom:10px;color:#7a8599;font-size:12px">
-      셀 더블클릭시 해당 고사실에 [감독배정/미배정] 토글 전환 <span style="background:#eaf6ec;padding:1px 8px;border-radius:3px">정감독</span>&nbsp;
+      셀 더블클릭시 해당 고사실에 [감독배정/미배정] 토글 전환 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="background:#eaf6ec;padding:1px 8px;border-radius:3px">정감독</span>&nbsp;
       <span style="background:#fff3cd;padding:1px 8px;border-radius:3px">부감독</span>&nbsp;
      </p>
     <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
@@ -174,12 +174,13 @@
     <h2>🎯 자동배정</h2>
     <div class="assign-actions">
       <button id="btn-run" class="btn-run" onclick="runAssign()">🚀 자동배정 실행</button>
-      <button id="btn-exclude-mode" class="btn-outline btn-mode" onclick="toggleExcludeMode()">🚫 제외</button>
-      <button id="btn-fixed-mode" class="btn-outline btn-mode" onclick="toggleFixedMode()">📌 고정 (only 시간)</button>
+      <button id="btn-exclude-mode" class="btn-outline btn-mode" onclick="toggleExcludeMode()">🚫 감독배정 제외</button>
+      <button id="btn-fixed-mode" class="btn-outline btn-mode" onclick="toggleFixedMode()">📌 감독시간 고정</button>
       <button id="btn-swap" class="btn-outline" onclick="doSwap()" disabled>⇄ 선택 셀 교환</button>
-      <button class="btn-danger" onclick="resetSection('assign')">초기화</button>
+      <button class="btn-danger" onclick="cancelAssignment()">배정 취소</button>
+      <button class="btn-danger btn-soft" onclick="resetAssignChanges()">변경 취소</button>
       <span style="color:#7a8599;font-size:11px">
-        원클릭(교환), 더블클릭(감독실&시간 고정)
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;🖱️원클릭 : 교환&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;🖱️🖱️더블클릭 : 고정 (감독실+시간)
       </span>
     </div>
     <div id="swap-history" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
