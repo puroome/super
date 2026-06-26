@@ -869,6 +869,21 @@ function swapCells(data, fixedMap, i1, j1, i2, j2) {
   return true;
 }
 
+// 다른 교시끼리 "당번 맞바꾸기": 칸이 가로(시간)로 이동하는 게 아니라,
+// 각자 자기 시간(열)에 그대로 있으면서 담당 교사(행)만 위아래로 바뀐다.
+//   val1(=c1의 값, 시간 c1.j) → c2.i 교사 줄로
+//   val2(=c2의 값, 시간 c2.j) → c1.i 교사 줄로
+// (들어갈 자리가 비어 있는지는 classifySwap에서 미리 검사한다.)
+function crossTimeSwap(data, c1, c2) {
+  const val1 = data[c1.i][c1.j];
+  const val2 = data[c2.i][c2.j];
+  data[c1.i][c1.j] = '';
+  data[c2.i][c2.j] = '';
+  data[c2.i][c1.j] = val1;
+  data[c1.i][c2.j] = val2;
+  return true;
+}
+
 function validateAssignment(slots, requirements) {
   // ponytail: quota 개념 제거 — 배정설정(requirements)이 비어있는지만 확인
   if (!requirements || requirements.length === 0) {
@@ -981,13 +996,110 @@ function findUncoveredRooms(data, roomRequirements, slots) {
   return uncovered;
 }
 
+// 빈칸 판정: '' 또는 '0'은 "감독 없음". ('x'/'X'는 제외칸이라 빈칸 아님)
+function isEmptyCell(str) {
+  const s = String(str ?? '');
+  return s === '' || s === '0';
+}
+
+// 어떤 칸(i,j)이 "다른 사람이 들어와도 되는 빈자리"인지 판정.
+// 빈칸이면서 + 제외(빨강)·고정시간(파랑)·고정방(회색)이 아니어야 함.
+//   maps = { excludedCells, preFixed, fixedCells, slotKeys }
+//   slotKeys[j-1] = 그 열의 키(`${dayIdx}_${period}`). 없으면 제외/고정 검사는 생략(빈칸 여부만).
+function isCellOpen(i, j, data, maps = {}) {
+  const raw = String(data?.[i]?.[j] ?? '');
+  if (!isEmptyCell(raw)) return false;                 // 이미 배정 있음(또는 제외 'x')
+  const key = maps.slotKeys?.[j - 1] ?? null;
+  if (key && maps.excludedCells?.[i]?.[key]) return false; // 제외(빨강)
+  if (key && maps.preFixed?.[i]?.[key]) return false;      // 고정-시간(파랑)
+  if (maps.fixedCells?.[i]?.[j]) return false;             // 고정-방(회색)
+  return true;
+}
+
+// ─── 교환 가능 여부 판정 (수동 교환용, UI와 분리된 순수 함수) ─────────────────
+// 두 칸을 맞바꿔도 되는지 판정한다. (maps는 다른 교시 교환의 빈자리 검사에만 사용)
+//   공통:
+//     - 둘 다 빈칸                 → { reason:'noop' }              (의미 없음)
+//     - 제외 고사실로 들어가면      → { reason:'room', forbidden }   (불가)
+//   같은 교시:
+//     - 한쪽만 빈칸                → { reason:'transfer-confirm' }   (넘겨주기 확인)
+//     - 유형이 다름(정↔부)         → { reason:'role-confirm' }       (확인 후 허용)
+//     - 그 외                      → { ok:true }                     (바로 허용)
+//   다른 교시(당번 맞바꾸기):
+//     - 한쪽만 빈칸                → { reason:'cross-needs-fill' }    (같은 교시에서 넘기라고 안내)
+//     - 받을 자리가 안 비었음       → { reason:'time-occupied', ... } (불가)
+//     - 유형이 다름                → { reason:'role-confirm', crossTime:true }
+//     - 그 외                      → { ok:true, crossTime:true }
+function classifySwap(data, teachers, c1, c2, maps = {}) {
+  const cell1 = String(data?.[c1.i]?.[c1.j] ?? '');
+  const cell2 = String(data?.[c2.i]?.[c2.j] ?? '');
+  const empty1 = isEmptyCell(cell1);
+  const empty2 = isEmptyCell(cell2);
+
+  // ── 다른 교시(다른 열) = 당번 맞바꾸기 ───────────────────────────────────────
+  if (c1.j !== c2.j) {
+    if (empty1 && empty2) return { reason: 'noop' };
+    // 한쪽만 빈칸이면 사실상 "넘겨주기"인데, 그건 같은 교시에서 해야 함 → 안내 차단
+    if (empty1 || empty2) return { reason: 'cross-needs-fill' };
+
+    // 양쪽 다 감독 있음 → 진짜 트레이드.
+    // 받을 자리(상대 줄, 자기 시간)가 비어 있어야 함: val1→[c2.i][c1.j], val2→[c1.i][c2.j]
+    if (!isCellOpen(c2.i, c1.j, data, maps)) return { reason: 'time-occupied', who: c2.i, col: c1.j };
+    if (!isCellOpen(c1.i, c2.j, data, maps)) return { reason: 'time-occupied', who: c1.i, col: c2.j };
+
+    // 제외 고사실: c2.i가 cell1의 방을, c1.i가 cell2의 방을 받음
+    const roomForC2i = extractRoom(cell1);
+    const roomForC1i = extractRoom(cell2);
+    const forbidden = [];
+    if (isForbiddenRoom(teachers[c2.i - 1], roomForC2i)) forbidden.push({ i: c2.i, room: roomForC2i });
+    if (isForbiddenRoom(teachers[c1.i - 1], roomForC1i)) forbidden.push({ i: c1.i, room: roomForC1i });
+    if (forbidden.length) return { reason: 'room', forbidden };
+
+    const role1 = extractRole(cell1);
+    const role2 = extractRole(cell2);
+    if (role1 !== role2) return { reason: 'role-confirm', role1, role2, crossTime: true };
+    return { ok: true, crossTime: true };
+  }
+
+  // ── 같은 교시(같은 열) ───────────────────────────────────────────────────────
+  if (empty1 && empty2) return { reason: 'noop' };
+
+  // 제외 고사실 검사를 가장 먼저(확인창보다 먼저 차단). 교환하면 각자 상대 칸의 방으로 들어감.
+  const roomForC1 = extractRoom(cell2); // c1.i가 받을 방
+  const roomForC2 = extractRoom(cell1); // c2.i가 받을 방
+  const forbidden = [];
+  if (roomForC1 && isForbiddenRoom(teachers[c1.i - 1], roomForC1)) forbidden.push({ i: c1.i, room: roomForC1 });
+  if (roomForC2 && isForbiddenRoom(teachers[c2.i - 1], roomForC2)) forbidden.push({ i: c2.i, room: roomForC2 });
+  if (forbidden.length) return { reason: 'room', forbidden };
+
+  // 한쪽만 빈칸 → 넘겨주기 확인 (값이 있는 쪽 → 빈 쪽으로)
+  if (empty1 || empty2) {
+    const fromCell = empty1 ? cell2 : cell1;
+    return {
+      reason: 'transfer-confirm',
+      from: empty1 ? c2 : c1,   // 감독을 가진 사람
+      to: empty1 ? c1 : c2,     // 받을 사람(빈칸)
+      role: extractRole(fromCell),
+      room: extractRoom(fromCell),
+    };
+  }
+
+  // 둘 다 감독 있음 → 유형 비교
+  const role1 = extractRole(cell1);
+  const role2 = extractRole(cell2);
+  if (role1 !== role2) return { reason: 'role-confirm', role1, role2 };
+  return { ok: true };
+}
+
 export {
   assignAll,
   assignRoles,
   assignRooms,
   findUncoveredRooms,
   isForbiddenRoom,
+  classifySwap,
   swapCells,
+  crossTimeSwap,
   validateAssignment,
   buildSlots,
   buildRequirementsArray,

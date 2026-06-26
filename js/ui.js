@@ -1,7 +1,7 @@
 // ui.js — UI 렌더링 및 상태 관리
 
 import {
-  assignAll, swapCells, validateAssignment,
+  assignAll, swapCells, crossTimeSwap, validateAssignment,
   buildSlots, extractRole, extractRoom, calcRoleCounts, calcWorkload,
   parseRequirementsCSV,
   buildSaveSnapshot, applySnapshotToState, emptyState,
@@ -10,7 +10,7 @@ import {
   pruneRoomRequirements, aggregateRoomRequirements,
   removeRoleFromRequirements, removeDayFromRequirements,
   computeTabLocks,
-  findUncoveredRooms, isForbiddenRoom,
+  findUncoveredRooms, isForbiddenRoom, classifySwap,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
@@ -1051,10 +1051,10 @@ function onCellClick(i, j) {
   const key = gridSlots[j - 1] ? slotKey(gridSlots[j - 1].dayIdx, gridSlots[j - 1].period) : null;
   const cell = String(state.data?.[i]?.[j] ?? '');
   const isManualFixed = !!state.fixedCells[i]?.[j];
-  const isPreFixed = key ? !!state.preFixed[i]?.[key] : false;
   const isExcludedCell = (key ? !!state.excludedCells[i]?.[key] : false) || cell.toLowerCase() === 'x';
-  const isEmpty = cell === '' || cell === '0' || cell === 0;
-  if (isManualFixed || isPreFixed || isEmpty || isExcludedCell) return;
+  // 파란색(고정-시간)·빈칸 칸도 교환 선택을 허용한다.
+  // 회색(시간+고사실 고정)·제외(X) 칸만 선택 불가. 실제 교환 조건은 doSwap에서 검사한다.
+  if (isManualFixed || isExcludedCell) return;
 
   const idx = state.selectedCells.findIndex(c => c.i === i && c.j === j);
   if (idx >= 0) state.selectedCells.splice(idx, 1);
@@ -1099,45 +1099,140 @@ function doSwap() {
   if (state.selectedCells.length !== 2) return;
   const [c1, c2] = state.selectedCells;
 
-  // 제외 고사실 검사 — 교환하면 각 교사가 "상대 칸의 방"으로 들어간다.
-  // 그 방이 본인의 제외 고사실이면 교환을 막는다(자동배정과 동일한 규칙을 수동에도 적용).
-  const roomForC1 = extractRoom(String(state.data[c2.i]?.[c2.j] ?? ''));
-  const roomForC2 = extractRoom(String(state.data[c1.i]?.[c1.j] ?? ''));
-  const t1 = state.teachers[c1.i - 1];
-  const t2 = state.teachers[c2.i - 1];
-  const violations = [];
-  if (isForbiddenRoom(t1, roomForC1)) violations.push(`${t1?.name ?? c1.i} 선생님 → 제외 고사실 "${roomForC1}"`);
-  if (isForbiddenRoom(t2, roomForC2)) violations.push(`${t2?.name ?? c2.i} 선생님 → 제외 고사실 "${roomForC2}"`);
-  if (violations.length) {
-    showErrorModal({
-      title: '교환 불가: 제외 고사실 위반',
-      desc: '이 교환은 교사를 본인의 제외 고사실에 배정하게 되어 막았습니다.',
-      errors: violations,
-      fix: '다른 칸과 교환하세요.\n정말 이 배정이 필요하다면, 기본정보 탭에서 해당 교사의 "제외 고사실" 설정을 먼저 지운 뒤 교환하세요.',
-    });
-    state.selectedCells = [];
-    renderAssignGrid();
-    return;
-  }
+  const getName = (c) => state.teachers[c.i - 1]?.name ?? `#${c.i}`;
+  const teacherName = (i) => state.teachers[i - 1]?.name ?? `#${i}`;
+  const slotLabel = (c) => {
+    const s = state.slots[c.j - 1];
+    return s ? `${s.dayIdx}일차 ${s.period}교시` : `${c.j}번 칸`;
+  };
+  const slotLabelByCol = (j) => {
+    const s = state.slots[j - 1];
+    return s ? `${s.dayIdx}일차 ${s.period}교시` : `${j}번 칸`;
+  };
+  const getSlot = (c) => state.slots[c.j - 1] ? `${state.slots[c.j - 1].dayIdx}일${state.slots[c.j - 1].period}교시` : c.j;
+  const roleName = (r) => state.roles[r - 1]?.name ?? `유형${r}`;
+  const clearSel = () => { state.selectedCells = []; renderAssignGrid(); };
 
-  if (swapCells(state.data, state.fixedCells, c1.i, c1.j, c2.i, c2.j)) {
+  // 교환 직전 값을 기억해뒀다가 되돌리기(×)에서 그대로 복원 → 여러 건이어도 각각 정확히 취소됨.
+  // cells: 이번 교환으로 값이 바뀌는 모든 칸. mutate: 실제 변경을 수행하는 함수.
+  const record = (cells, mutate) => {
+    const before = cells.map(c => ({ i: c.i, j: c.j, val: state.data[c.i]?.[c.j] ?? '' }));
+    mutate();
     refreshAssignmentStats();
     if (!state.swapHistory) state.swapHistory = [];
-    const getName = (c) => state.teachers[c.i - 1]?.name ?? c.i;
-    const getSlot = (c) => state.slots[c.j - 1] ? `${state.slots[c.j - 1].dayIdx}일${state.slots[c.j - 1].period}교시` : c.j;
-    state.swapHistory.push({ c1, c2, label: `${getName(c1)} ${getSlot(c1)} ↔ ${getName(c2)} ${getSlot(c2)}` });
+    state.swapHistory.push({ before, label: `${getName(c1)} ${getSlot(c1)} ↔ ${getName(c2)} ${getSlot(c2)}` });
     state.selectedCells = [];
     renderAssignGrid();
     toast('교환 완료');
-  } else {
-    toast('고정된 셀은 교환할 수 없습니다');
+  };
+
+  // classifySwap에 제외/고정 정보 전달 (다른 교시 교환의 "받을 자리가 비었나" 검사용)
+  const maps = {
+    excludedCells: state.excludedCells,
+    preFixed: state.preFixed,
+    fixedCells: state.fixedCells,
+    slotKeys: gridSlots.map(s => slotKey(s.dayIdx, s.period)),
+  };
+
+  const verdict = classifySwap(state.data, state.teachers, c1, c2, maps);
+
+  // ① 의미 없는 교환 (둘 다 빈칸)
+  if (verdict.reason === 'noop') {
+    toast('변경사항 없음');
+    return clearSel();
   }
+
+  // ② 제외 고사실로 들어가는 교환 불가 (확인창보다 먼저 차단)
+  if (verdict.reason === 'room') {
+    const errors = verdict.forbidden.map(f => `${teacherName(f.i)} 선생님 → 제외 고사실 "${f.room}"`);
+    showErrorModal({
+      title: '교환 불가: 제외 고사실 위반',
+      desc: '이 교환은 교사를 본인의 제외 고사실에 배정하게 되어 막았습니다.',
+      errors,
+      fix: '다른 칸과 교환하세요.\n정말 이 배정이 필요하다면, 기본정보 탭에서 해당 교사의 "제외 고사실" 설정을 먼저 지운 뒤 교환하세요.',
+    });
+    return clearSel();
+  }
+
+  // ③ 다른 교시인데 한쪽이 빈칸 → 넘겨주기는 "같은 교시"에서 하라고 안내
+  if (verdict.reason === 'cross-needs-fill') {
+    showErrorModal({
+      title: '교환 불가: 넘겨주기는 같은 교시에서',
+      desc: '한 분의 감독을 다른 분께 넘기는 것은 "같은 교시" 안에서만 할 수 있어요.\n지금은 서로 다른 교시의 칸을 고르셨습니다.',
+      errors: [`${getName(c1)} (${slotLabel(c1)}) ↔ ${getName(c2)} (${slotLabel(c2)})`],
+      fix: '감독을 받을 선생님의 "같은 교시" 빈칸을 골라 교환하세요.\n(예: 어떤 분의 3교시 감독을 넘기려면, 받을 분의 3교시 빈칸을 고르세요.)',
+    });
+    return clearSel();
+  }
+
+  // ④ 다른 교시 당번 맞바꾸기인데, 상대가 그 교시에 비어있지 않음(배정 있음/제외/고정) → 차단
+  if (verdict.reason === 'time-occupied') {
+    showErrorModal({
+      title: '교환 불가: 자리가 비어있지 않음',
+      desc: `당번을 맞바꾸려면 ${teacherName(verdict.who)} 선생님이 ${slotLabelByCol(verdict.col)}에 비어 있어야 해요.\n지금 그 자리에는 이미 다른 배정이 있거나, 제외/고정된 시간입니다.`,
+      errors: [`${teacherName(verdict.who)} 선생님 — ${slotLabelByCol(verdict.col)} 자리 사용 불가`],
+      fix: '두 분 모두 상대의 교시에 비어 있을 때만 당번을 맞바꿀 수 있어요.\n비어 있는 다른 칸과 교환하세요.',
+    });
+    return clearSel();
+  }
+
+  // ⑤ 넘겨주기 확인 (같은 교시, 한쪽 빈칸)
+  if (verdict.reason === 'transfer-confirm') {
+    const fromName = getName(verdict.from);
+    const toName = getName(verdict.to);
+    const roomLabel = verdict.room ? `${verdict.room}호 ` : '';
+    const ok = confirm(
+      `${fromName} 선생님의 감독을 ${toName} 선생님께 넘깁니다.\n\n` +
+      `· ${toName}: 감독 없음 → ${roleName(verdict.role)}(${roomLabel}담당)\n` +
+      `· ${fromName}: ${roleName(verdict.role)}(${roomLabel}담당) → 감독 없음\n\n` +
+      `계속하시겠습니까?`
+    );
+    if (!ok) return clearSel();
+    return record([c1, c2], () => swapCells(state.data, state.fixedCells, c1.i, c1.j, c2.i, c2.j));
+  }
+
+  // ⑥ 감독 유형이 다름(정↔부) — 같은 교시/다른 교시 공통으로 한 번 확인
+  if (verdict.reason === 'role-confirm') {
+    const r1 = roleName(verdict.role1);
+    const r2 = roleName(verdict.role2);
+    const ok = confirm(
+      `이 교환은 두 선생님의 감독 유형이 서로 바뀝니다.\n\n` +
+      `· ${getName(c1)}: ${r1} → ${r2}\n` +
+      `· ${getName(c2)}: ${r2} → ${r1}\n\n` +
+      `계속하시겠습니까?`
+    );
+    if (!ok) return clearSel();
+    // 확인했으면 아래 실제 실행으로 진행
+  }
+
+  // ⑦ 실제 교환 실행
+  if (verdict.crossTime) {
+    // 다른 교시 당번 맞바꾸기: 네 칸이 바뀜
+    const cells = [
+      { i: c1.i, j: c1.j }, { i: c2.i, j: c2.j },
+      { i: c2.i, j: c1.j }, { i: c1.i, j: c2.j },
+    ];
+    return record(cells, () => crossTimeSwap(state.data, c1, c2));
+  }
+
+  // 같은 교시: 두 칸 swap (회색=시간+고사실 고정 칸은 swapCells가 막는다)
+  if (state.fixedCells[c1.i]?.[c1.j] || state.fixedCells[c2.i]?.[c2.j]) {
+    toast('고정된 셀은 교환할 수 없습니다');
+    return clearSel();
+  }
+  return record([c1, c2], () => swapCells(state.data, state.fixedCells, c1.i, c1.j, c2.i, c2.j));
 }
 
 window.undoSwap = (idx) => {
   const h = state.swapHistory?.[idx];
   if (!h) return;
-  swapCells(state.data, state.fixedCells, h.c1.i, h.c1.j, h.c2.i, h.c2.j);
+  if (h.before) {
+    // 교환 직전 값으로 복원 (같은 교시·다른 교시 모두 정확히 되돌아감)
+    h.before.forEach(({ i, j, val }) => { if (state.data[i]) state.data[i][j] = val; });
+  } else if (h.c1) {
+    // 구버전 기록 호환 (직전값이 없으면 같은 교시 재맞바꾸기)
+    swapCells(state.data, state.fixedCells, h.c1.i, h.c1.j, h.c2.i, h.c2.j);
+  }
   refreshAssignmentStats();
   state.swapHistory.splice(idx, 1);
   renderAssignGrid();

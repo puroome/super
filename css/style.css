@@ -144,11 +144,15 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   box-shadow: var(--shadow);
 }
 
-/* 제외/고정(시간) 모드 버튼 — 활성화되면 강조 표시 */
-.btn-mode.mode-on {
-  background: var(--accent-dark);
-  color: white;
-  border-color: var(--accent-dark);
+/* 제외/고정(시간) 모드 버튼 — 활성화되면 해당 셀 색과 동일하게 표시(색 설명 없이도 직관적) */
+.btn-mode.mode-on { color: #333; }
+#btn-exclude-mode.mode-on {        /* 제외 = 제외 셀과 같은 옅은 빨강 */
+  background: #fbdada;
+  border-color: #e3a3a3;
+}
+#btn-fixed-mode.mode-on {          /* 고정(시간) = 고정 셀과 같은 옅은 파랑 */
+  background: #cfe3fa;
+  border-color: #9dbfe6;
 }
 
 /* ── 테이블 ── */
