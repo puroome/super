@@ -10,6 +10,7 @@ import {
   pruneRoomRequirements, aggregateRoomRequirements,
   removeRoleFromRequirements, removeDayFromRequirements,
   computeTabLocks,
+  findUncoveredRooms, isForbiddenRoom,
 } from './algorithm.js';
 import {
   loadBasic, saveBasic,
@@ -176,9 +177,9 @@ function renderTeacherList() {
   }
   el.innerHTML = state.teachers.map((t, i) => `
     <div class="teacher-card">
-      <input name="name" value="${t.name}" placeholder="이름" style="${t.name.length > 3 ? 'font-size:' + Math.max(9.6, 14.4 * 3 / t.name.length) + 'px' : ''}" onchange="updateTeacher(${i},'name',this.value);this.style.fontSize=this.value.length>3?Math.max(9.6,14.4*3/this.value.length)+'px':''">
+      <input name="name" value="${escapeHtml(t.name)}" placeholder="이름" style="${t.name.length > 3 ? 'font-size:' + Math.max(9.6, 14.4 * 3 / t.name.length) + 'px' : ''}" onchange="updateTeacher(${i},'name',this.value);this.style.fontSize=this.value.length>3?Math.max(9.6,14.4*3/this.value.length)+'px':''">
       <input name="workload" type="number" value="${t.prevWorkload > 0 ? t.prevWorkload : ''}" placeholder="" title="이전누적강도" min="0" step="1" pattern="[0-9]*" inputmode="numeric" onchange="updateTeacher(${i},'prevWorkload',+this.value)" onkeypress="return event.charCode>=48&&event.charCode<=57">
-      <input name="forbidden" value="${t.forbiddenRooms ?? ''}" placeholder="" title="제외 고사실 (예: 101)" onchange="updateTeacherField(${i},'forbiddenRooms',this)">
+      <input name="forbidden" value="${escapeHtml(t.forbiddenRooms ?? '')}" placeholder="" title="제외 고사실 (예: 101)" onchange="updateTeacherField(${i},'forbiddenRooms',this)">
       <button class="teacher-card-del" onclick="removeTeacher(${i})" title="삭제">×</button>
     </div>
   `).join('');
@@ -1097,6 +1098,28 @@ function refreshAssignmentStats() {
 function doSwap() {
   if (state.selectedCells.length !== 2) return;
   const [c1, c2] = state.selectedCells;
+
+  // 제외 고사실 검사 — 교환하면 각 교사가 "상대 칸의 방"으로 들어간다.
+  // 그 방이 본인의 제외 고사실이면 교환을 막는다(자동배정과 동일한 규칙을 수동에도 적용).
+  const roomForC1 = extractRoom(String(state.data[c2.i]?.[c2.j] ?? ''));
+  const roomForC2 = extractRoom(String(state.data[c1.i]?.[c1.j] ?? ''));
+  const t1 = state.teachers[c1.i - 1];
+  const t2 = state.teachers[c2.i - 1];
+  const violations = [];
+  if (isForbiddenRoom(t1, roomForC1)) violations.push(`${t1?.name ?? c1.i} 선생님 → 제외 고사실 "${roomForC1}"`);
+  if (isForbiddenRoom(t2, roomForC2)) violations.push(`${t2?.name ?? c2.i} 선생님 → 제외 고사실 "${roomForC2}"`);
+  if (violations.length) {
+    showErrorModal({
+      title: '교환 불가: 제외 고사실 위반',
+      desc: '이 교환은 교사를 본인의 제외 고사실에 배정하게 되어 막았습니다.',
+      errors: violations,
+      fix: '다른 칸과 교환하세요.\n정말 이 배정이 필요하다면, 기본정보 탭에서 해당 교사의 "제외 고사실" 설정을 먼저 지운 뒤 교환하세요.',
+    });
+    state.selectedCells = [];
+    renderAssignGrid();
+    return;
+  }
+
   if (swapCells(state.data, state.fixedCells, c1.i, c1.j, c2.i, c2.j)) {
     refreshAssignmentStats();
     if (!state.swapHistory) state.swapHistory = [];
@@ -1225,7 +1248,23 @@ async function runAssign() {
     state.roleCounts = result.roleCounts;
     state.swapHistory = [];
 
-    if (result.roomShortages.length > 0) {
+    // 감독 없는 고사실 검사 — 교사가 부족하면 방이 그리드에서 조용히 사라진다.
+    // "완료"라고 말하기 전에 비어버린 고사실을 콕 집어 경고한다.
+    const uncovered = findUncoveredRooms(result.data, state.roomRequirements, result.slots);
+    if (uncovered.length > 0) {
+      const details = uncovered.map(u => {
+        const day = state.examDays[u.dayIdx - 1];
+        const dateStr = day ? formatDate(day.date) : `${u.dayIdx}일차`;
+        const roleName = state.roles[u.roleIdx - 1]?.name ?? `감독유형${u.roleIdx}`;
+        return `${dateStr} ${u.period}교시 — ${u.roomName} (${roleName}) 감독 없음`;
+      });
+      showErrorModal({
+        title: '⚠ 감독 없는 고사실',
+        desc: `감독이 배정되지 않은 고사실이 ${uncovered.length}곳 있습니다.\n배정할 수 있는 교사보다 채워야 할 자리가 더 많습니다.`,
+        errors: details,
+        fix: '다음 중 하나로 해결하세요:\n① 그 시간에 감독 가능한 교사를 더 추가하세요 (기본정보 탭).\n② 해당 교사들의 제외시간·제외 고사실이 너무 많지 않은지 확인하세요.\n③ 그 시간에 꼭 필요한 방이 아니면 배정설정 탭에서 그 방을 꺼서 자리 수를 줄이세요.',
+      });
+    } else if (result.roomShortages.length > 0) {
       const shortageDetails = result.roomShortages.map(s => {
         const slot = result.slots[s.j - 1];
         const day = slot ? state.examDays[slot.dayIdx - 1] : null;

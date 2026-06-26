@@ -116,11 +116,19 @@ function removeDayFromRequirements(roomRequirements, removedDayIdx) {
 
 function gridCellDisplay(cell, isFixed, isManualFixed) {
   cell = String(cell ?? '');
-  const bg = isManualFixed ? '#c8c8c8' : isFixed ? '#cfe3fa' : cell === 'x' ? '#fbdada' : '#fff';
-  if (cell === '0' || cell === '') return { bg, text: '' };
-  if (cell === 'x') return { bg, text: 'X' };
   const roleIdx = extractRole(cell);
   const room = extractRoom(cell);
+  // 보직은 정해졌는데 방이 안 붙은 칸(예: '[1]') — 빈칸으로 숨기면 한가한 칸과
+  // 구분이 안 되므로 '방미정'으로 표시하고 주황 배경으로 눈에 띄게 한다.
+  const roomless = roleIdx > 0 && room === '';
+  const bg = isManualFixed ? '#c8c8c8'
+    : isFixed ? '#cfe3fa'
+    : cell === 'x' ? '#fbdada'
+    : roomless ? '#ffe0b2'
+    : '#fff';
+  if (cell === '0' || cell === '') return { bg, text: '' };
+  if (cell === 'x') return { bg, text: 'X' };
+  if (roomless) return { bg, text: '방미정' };
   const text = roleIdx > 0 ? room : cell;
   return { bg, text };
 }
@@ -936,8 +944,49 @@ function emptyState() {
     data: null, fixedCells: {}, workload: [], roleCounts: [], slots: [],
   };
 }
+// ─── 제외 고사실 검사 (수동 교환용) ───────────────────────────────────────────
+// 교사의 forbiddenRooms(쉼표 구분 문자열)에 roomName이 들어있으면 true.
+function isForbiddenRoom(teacher, roomName) {
+  if (!roomName) return false;
+  const list = String(teacher?.forbiddenRooms ?? '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+  return list.includes(roomName);
+}
+
+// ─── 감독 없는 고사실 찾기 ────────────────────────────────────────────────────
+// 배정설정에서 요구한 고사실 중, 실제 배정 결과(data)에 아무 교사도 들어가지 않은
+// 자리를 반환한다. 교사 수가 부족하면 방이 그리드에서 조용히 사라지는데(미배정
+// 표시조차 없음), 이를 잡아 경고하기 위한 순수 함수.
+function findUncoveredRooms(data, roomRequirements, slots) {
+  const tCount = (data?.length ?? 1) - 1;
+  const assigned = {}; // `${slotIdx}\u0000${roomName}` -> 실제 배정된 인원수
+  for (let j = 1; j <= slots.length; j++) {
+    for (let i = 1; i <= tCount; i++) {
+      const room = extractRoom(String(data[i]?.[j] ?? ''));
+      if (room && room !== '미배정') {
+        const key = `${j}\u0000${room}`;
+        assigned[key] = (assigned[key] ?? 0) + 1;
+      }
+    }
+  }
+  const uncovered = [];
+  for (const req of roomRequirements) {
+    const slotIdx = slots.findIndex(s => s.dayIdx === req.dayIdx && s.period === req.period) + 1;
+    if (slotIdx <= 0) continue;
+    const have = assigned[`${slotIdx}\u0000${req.roomName}`] ?? 0;
+    for (let k = have; k < (req.count ?? 1); k++) {
+      uncovered.push({ dayIdx: req.dayIdx, period: req.period, roleIdx: req.roleIdx, roomName: req.roomName });
+    }
+  }
+  return uncovered;
+}
+
 export {
   assignAll,
+  assignRoles,
+  assignRooms,
+  findUncoveredRooms,
+  isForbiddenRoom,
   swapCells,
   validateAssignment,
   buildSlots,

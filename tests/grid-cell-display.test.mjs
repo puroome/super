@@ -19,8 +19,8 @@ import { csvField, gridCellDisplay } from '../js/algorithm.js';
   assert.deepStrictEqual(gridCellDisplay('1', true), { bg: '#cfe3fa', text: '1' });
   // 고정시간으로 배정된 칸은 x여도 파란색이 우선
   assert.deepStrictEqual(gridCellDisplay('x', true).bg, '#cfe3fa');
-  // 방 번호 없이 역할만 있는 경우(방 미배정) — 원본 표기를 그대로 보여줘 정보 손실 방지
-  assert.deepStrictEqual(gridCellDisplay('[1]', false), { bg: '#fff', text: '[1]' });
+  // 방 번호 없이 역할만 있는 칸(방 미배정) — 빈칸으로 숨기지 않고 '방미정'+주황으로 표시
+  assert.deepStrictEqual(gridCellDisplay('[1]', false), { bg: '#ffe0b2', text: '방미정' });
 }
 
 console.log('OK: csvField/gridCellDisplay 정상 동작');

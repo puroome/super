@@ -1,0 +1,10 @@
+{
+  "name": "exam-supervisor",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "감독 자동배정 앱 - 테스트 실행용 메타데이터 (빌드/배포와 무관)",
+  "scripts": {
+    "test": "node tests/run.mjs"
+  }
+}
