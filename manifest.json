@@ -1,7 +1,7 @@
 {
   "name": "고등학교 시험감독 배정",
   "short_name": "감독 배정",
-  "description": 시험감독 배정 프로그램",
+  "description": "시험감독 배정 프로그램",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#ffffff",
