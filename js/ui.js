@@ -13,6 +13,7 @@ import {
   findUncoveredRooms, isForbiddenRoom, classifySwap,
 } from './algorithm.js';
 import {
+  watchAuth, signIn, signOutNow,
   loadBasic, saveBasic,
   loadRequirements, saveRequirements,
   loadAssignment, saveAssignment, updateFixedCells, parseAssignment,
@@ -2254,7 +2255,48 @@ window.closeErrorModal = function(e) {
 
 // ─── 초기화 ───────────────────────────────────────────────────────────────────
 
-export function init() {
+// 앱 본체는 로그인+권한 통과 후 딱 한 번만 시작한다.
+let appStarted = false;
+function startAppOnce() {
+  if (appStarted) return;
+  appStarted = true;
   initTabs();
   loadAll();
+}
+
+window.signOutApp = async () => {
+  try { await signOutNow(); } catch (e) { /* 무시 */ }
+  location.reload(); // 메모리 상태를 깨끗이 비우고 로그인 화면으로
+};
+
+export function init() {
+  const gate = document.getElementById('auth-gate');
+  const checking = document.getElementById('auth-checking');
+  const loginBtn = document.getElementById('login-btn');
+  const msg = document.getElementById('auth-msg');
+  const userBadge = document.getElementById('auth-user');
+
+  loginBtn?.addEventListener('click', async () => {
+    if (msg) msg.textContent = '';
+    try { await signIn(); }
+    catch (e) { /* 팝업을 닫았거나 취소함 — 조용히 무시 */ }
+  });
+
+  watchAuth((s) => {
+    if (s.status === 'allowed') {
+      if (gate) gate.style.display = 'none';
+      if (userBadge) userBadge.textContent = s.email ?? '';
+      startAppOnce();
+      return;
+    }
+    // 로그인 안 됨 / 권한 없음 → 로그인 화면 표시
+    if (gate) gate.style.display = 'flex';
+    if (checking) checking.style.display = 'none';
+    if (loginBtn) loginBtn.style.display = 'inline-flex';
+    if (msg) {
+      msg.textContent = s.status === 'denied'
+        ? `${s.email} 계정은 사용 권한이 없습니다. 관리자에게 등록을 요청하세요.`
+        : '';
+    }
+  });
 }

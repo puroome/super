@@ -536,6 +536,9 @@ tbody .req-sticky-period {
 }
 .modal-box h3 { font-size: 15px; color: var(--accent-dark); margin-bottom: 12px; }
 
+/* 불러오기 모달: 가장 긴 항목에 맞춰 자동 폭 (제목 줄바꿈 방지) */
+#load-modal .modal-box { width: max-content; max-width: 92vw; min-width: 440px; }
+
 /* ── 오류 모달 ── */
 .error-modal-box {
   width: 560px;
