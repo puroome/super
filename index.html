@@ -3,7 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
   <title>감독 배정</title>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2563eb">
+
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body oncontextmenu="return false">
@@ -208,6 +213,19 @@
     </div>
   </div>
 </div>
+
+<!-- ── 서비스 워커 등록 ── -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker
+        .register('./service-worker.js')
+        .catch((error) => {
+          console.error('서비스 워커 등록 실패:', error);
+        });
+    });
+  }
+</script>
 
 <!-- ── JS (ES Module) ── -->
 <script type="module">
