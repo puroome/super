@@ -1036,6 +1036,23 @@ function classifySwap(data, teachers, c1, c2, maps = {}) {
   const empty1 = isEmptyCell(cell1);
   const empty2 = isEmptyCell(cell2);
 
+  // ── 파란셀(preFixed: 감독시간/유형 고정) 보호 ────────────────────────────────
+  // 두 칸 중 하나라도 파란셀이면 고정을 깨지 않는 교환만 허용한다.
+  //   · 유형 미지정(role null) 파란셀이 끼면        → 차단 (유형부터 지정해야 함)
+  //   · 유형 지정 파란셀: 같은 시간 + 같은 유형만 허용 (그 외 전부 차단)
+  // 같은 시간 swap이면 c1.i는 cell2의 유형을, c2.i는 cell1의 유형을 받으므로
+  // 받게 될 유형이 파란셀의 고정유형과 같을 때만 통과시킨다. 빈칸은 유형 0이라 자동 차단.
+  const pf1 = maps.slotKeys ? maps.preFixed?.[c1.i]?.[maps.slotKeys[c1.j - 1]] : null;
+  const pf2 = maps.slotKeys ? maps.preFixed?.[c2.i]?.[maps.slotKeys[c2.j - 1]] : null;
+  if (pf1 || pf2) {
+    const noRole = (pf) => pf && pf.role !== 1 && pf.role !== 2;
+    if (noRole(pf1) || noRole(pf2)) return { reason: 'prefixed-norole' };
+    if (c1.j !== c2.j) return { reason: 'prefixed-locked', kind: 'time' };
+    if (pf1 && extractRole(cell2) !== pf1.role) return { reason: 'prefixed-locked', kind: 'role' };
+    if (pf2 && extractRole(cell1) !== pf2.role) return { reason: 'prefixed-locked', kind: 'role' };
+    // 통과 → 같은 시간+같은 유형. 아래 일반 로직(제외 고사실 검사 등)으로 진행.
+  }
+
   // ── 다른 교시(다른 열) = 당번 맞바꾸기 ───────────────────────────────────────
   if (c1.j !== c2.j) {
     if (empty1 && empty2) return { reason: 'noop' };

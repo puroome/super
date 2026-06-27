@@ -1177,6 +1177,29 @@ function doSwap() {
 
   const verdict = classifySwap(state.data, state.teachers, c1, c2, maps);
 
+  // ⓪ 파란셀(감독시간/유형 고정) 보호
+  if (verdict.reason === 'prefixed-norole') {
+    showErrorModal({
+      title: '교환 불가: 감독유형 미지정',
+      desc: '선택된 셀 중에 감독유형이 지정 안 된 셀이 있어서, 교환이 안 됩니다.\n확인해주세요.',
+      errors: ['[감독시간 고정]은 반드시 감독유형(정/부)까지 지정되어 있어야 합니다.'],
+      fix: '① 자동배정 탭에서 [감독시간 고정] 버튼으로 모드를 켭니다.\n② "?" 가 있는 파란 칸을 더블클릭합니다.\n③ 1(정감독) 또는 2(부감독)를 입력하고 Enter를 누른 뒤 다시 교환하세요.',
+    });
+    return clearSel();
+  }
+  if (verdict.reason === 'prefixed-locked') {
+    const why = verdict.kind === 'time'
+      ? '감독시간이 고정된 셀이라 다른 시간으로 옮길 수 없습니다.'
+      : '감독유형이 고정된 셀이라 빈칸·다른 유형과 교환할 수 없습니다.';
+    showErrorModal({
+      title: '교환 불가: 고정된 셀',
+      desc: `${why}\n같은 시간·같은 감독유형(고사실만 바뀌는 교환)만 가능합니다.`,
+      errors: [`${getName(c1)} (${slotLabel(c1)}) ↔ ${getName(c2)} (${slotLabel(c2)})`],
+      fix: '같은 시간대에서 동일한 감독유형인 다른 선생님 칸과 교환하세요.',
+    });
+    return clearSel();
+  }
+
   // ① 의미 없는 교환 (둘 다 빈칸)
   if (verdict.reason === 'noop') {
     toast('변경사항 없음');
@@ -1188,9 +1211,9 @@ function doSwap() {
     const errors = verdict.forbidden.map(f => `${teacherName(f.i)} 선생님 → 제외 고사실 "${f.room}"`);
     showErrorModal({
       title: '교환 불가: 제외 고사실 위반',
-      desc: '이 교환은 교사를 본인의 제외 고사실에 배정하게 되어 막았습니다.',
+      desc: '제외 고사실이 선택되어 교환이 불가합니다.',
       errors,
-      fix: '다른 칸과 교환하세요.\n정말 이 배정이 필요하다면, 기본정보 탭에서 해당 교사의 "제외 고사실" 설정을 먼저 지운 뒤 교환하세요.',
+      fix: '다른 칸과 교환하세요.\n이 교환이 필요하다면, 기본정보 탭에서 해당 교사의 [제외 고사실]을 지운 뒤 교환하세요.',
     });
     return clearSel();
   }
@@ -1198,10 +1221,10 @@ function doSwap() {
   // ③ 다른 교시인데 한쪽이 빈칸 → 넘겨주기는 "같은 교시"에서 하라고 안내
   if (verdict.reason === 'cross-needs-fill') {
     showErrorModal({
-      title: '교환 불가: 넘겨주기는 같은 교시에서',
-      desc: '한 분의 감독을 다른 분께 넘기는 것은 "같은 교시" 안에서만 할 수 있어요.\n지금은 서로 다른 교시의 칸을 고르셨습니다.',
+      title: '교환 불가',
+      desc: '감독을 다른 사람에게 넘기는 것은 같은 시간에서만 가능합니다.',
       errors: [`${getName(c1)} (${slotLabel(c1)}) ↔ ${getName(c2)} (${slotLabel(c2)})`],
-      fix: '감독을 받을 선생님의 "같은 교시" 빈칸을 골라 교환하세요.\n(예: 어떤 분의 3교시 감독을 넘기려면, 받을 분의 3교시 빈칸을 고르세요.)',
+      fix: '감독을 받을 선생님의 "같은 교시" 빈칸을 골라 교환하세요.',
     });
     return clearSel();
   }
@@ -1209,8 +1232,8 @@ function doSwap() {
   // ④ 다른 교시 당번 맞바꾸기인데, 상대가 그 교시에 비어있지 않음(배정 있음/제외/고정) → 차단
   if (verdict.reason === 'time-occupied') {
     showErrorModal({
-      title: '교환 불가: 자리가 비어있지 않음',
-      desc: `당번을 맞바꾸려면 ${teacherName(verdict.who)} 선생님이 ${slotLabelByCol(verdict.col)}에 비어 있어야 해요.\n지금 그 자리에는 이미 다른 배정이 있거나, 제외/고정된 시간입니다.`,
+      title: '교환 불가',
+      desc: `다른 시간대 감독을 바꾸려면, ${teacherName(verdict.who)} 선생님이 ${slotLabelByCol(verdict.col)}에 비어 있어야 해요.\n지금 그 자리에는 배정이 되어있습니다.`,
       errors: [`${teacherName(verdict.who)} 선생님 — ${slotLabelByCol(verdict.col)} 자리 사용 불가`],
       fix: '두 분 모두 상대의 교시에 비어 있을 때만 당번을 맞바꿀 수 있어요.\n비어 있는 다른 칸과 교환하세요.',
     });
