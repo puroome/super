@@ -140,9 +140,9 @@
         <div class="help-row"><span class="hk hk-primary">+ 날짜 추가</span>
           <div class="help-desc">시험 날짜 한 줄씩 추가 (날짜, 시작교시, 종료교시 입력)</div></div>
         <div class="help-row"><span class="hk hk-csvup">고사실CSV 올리기</span>
-          <div class="help-desc">고사실 목록을 CSV로 한 번에 등록</div></div>
+          <div class="help-desc">고사실 목록을 CSV로 업로드</div></div>
         <div class="help-row"><span class="hk hk-csvdown">고사실 CSV 양식 받기</span>
-          <div class="help-desc">작성용 CSV 양식 내려받기 (현재 입력 내용 포함됨)</div></div>
+          <div class="help-desc">작성용 CSV 양식 내려받기 (현재 입력 내용 포함)</div></div>
         <div class="help-row"><span class="hk hk-danger">초기화</span>
           <div class="help-desc">시험일 및 고사실 영역만 비우기</div></div>
         <div class="help-note">
@@ -151,7 +151,7 @@
           · <b>부감독</b> : 값(예: 1)이 있으면 <b style="color:#d97706">부감독실</b>, 비우면 <b style="color:#16a34a">정감독실</b>
           <div class="help-warn">
             <span class="nt-warn">⚠️ 주의</span><br>
-            · 고사실은 <b>CSV로만 등록</b> (개별 추가 버튼 없음)
+            · 고사실은 <b>CSV로만 등록</b> 가능 (개별 추가 버튼 없음)
           </div>
         </div>
       </div>`,
@@ -171,14 +171,14 @@
       <div class="help-list">
         <div class="help-row"><span class="hk hk-primary">+ 교사 추가</span>
           <div class="help-desc">빈 줄 추가 후 직접 입력<br>
-          <b>이름, 이전누적업무강도, 제외고사실</b>만 직접 입력가능
+          <b>이름, 이전누적업무강도, 제외고사실</b>만 직접 입력
          </div></div>
         <div class="help-row"><span class="hk hk-csvup">CSV 올리기</span>
           <div class="help-desc">CSV로 한 번에 입력<br>
-	<b>제외시간, 고정시간, 감독유형</b>까지 포함한 모든 자료를 CSV로 입력가능<br>
+	<b>제외시간, 고정시간, 감독유형</b>까지 포함한 모든 자료를 CSV로 업로드<br>
 	</div></div>
         <div class="help-row"><span class="hk hk-csvdown">CSV 양식 받기</span>
-          <div class="help-desc">작성용 CSV 양식 내려받기 (현재 입력 내용 포함됨)</div></div>
+          <div class="help-desc">작성용 CSV 양식 내려받기 (현재 입력 내용 포함)</div></div>
         <div class="help-row"><span class="hk hk-outline">📊 이전누적강도 불러오기</span>
           <div class="help-desc">저장된 이전 자료에서 누적강도만 불러와서 채우기</div></div>
         <div class="help-row"><span class="hk hk-danger">초기화</span>
@@ -209,9 +209,9 @@
         <div class="help-row"><span class="hk hk-action">셀 더블클릭</span>
           <div class="help-desc">저장한 고사실에 <b>감독배정 ↔ 미배정</b> 토글</div></div>
         <div class="help-row"><span class="hk hk-csvup">CSV 올리기</span>
-          <div class="help-desc">고사실별 운영 여부를 CSV로 한 번에 설정</div></div>
+          <div class="help-desc">고사실별 운영 여부를 CSV로 업로드</div></div>
         <div class="help-row"><span class="hk hk-csvdown">CSV 양식 받기</span>
-          <div class="help-desc">작성용 CSV 양식 내려받기 (현재 입력 내용 포함됨)</div></div>
+          <div class="help-desc">작성용 CSV 양식 내려받기 (현재 입력 내용 포함)</div></div>
         <div class="help-row"><span class="hk hk-danger">초기화</span>
           <div class="help-desc">입력된 배정값 지우기</div></div>
         <div class="help-note">
@@ -226,9 +226,15 @@
       <div class="help-list">
         <div class="help-row"><span class="hk hk-primary">🚀 자동배정 실행</span>
           <div class="help-desc">누적된 업무강도 등 다양한 조건에 맞춰 감독 자동 배정</div></div>
-        <div class="help-row"><span class="hk hk-outline">🚫 감독배정 제외</span>
+        <div class="help-row">
+          <span class="hk hk-outline">🚫 감독배정 제외</span>
+          <span style="color:#9aa3b2;margin:0 4px">→</span>
+          <span class="hk" style="background:#fbdada;border-color:#e3a3a3;color:#333">🚫 감독배정 제외</span>
           <div class="help-desc">버튼 켠 뒤 셀 선택 → 해당 시간에 감독 제외 (X표시된 <span style="color:red">빨간색 셀</span>)</div></div>
-        <div class="help-row"><span class="hk hk-outline">📌 감독시간 고정</span>
+        <div class="help-row">
+          <span class="hk hk-outline">📌 감독시간 고정</span>
+          <span style="color:#9aa3b2;margin:0 4px">→</span>
+          <span class="hk" style="background:#cfe3fa;border-color:#9dbfe6;color:#333">📌 감독시간 고정</span>
           <div class="help-desc">버튼 켠 뒤 셀 선택 → 해당시간에 감독 고정 (<span style="color:blue">파란색 셀</span>)<br>
           이후 우클릭으로 감독유형(1 = 정감독, 2 = 부감독) 지정필수</div></div>
         <div class="help-row"><span class="hk hk-outline">⇄ 선택 셀 교환</span>
