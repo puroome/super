@@ -26,7 +26,7 @@
   .auth-login-btn{margin-top:16px;display:inline-flex;align-items:center;gap:10px;padding:11px 18px;border:1px solid #d0d7e3;border-radius:8px;background:#fff;color:#3c4043;font-size:14px;font-weight:600;cursor:pointer}
   .auth-login-btn:hover{background:#f7f9fc}
   .auth-msg{color:#dc2626;font-size:12.5px;min-height:16px;margin-top:12px}
-  .auth-user-badge{font-size:12.5px;color:#fff;margin:0 8px;align-self:center}
+  .auth-user-badge{font-size:12.5px;color:#fff;margin:0 0px;align-self:center}
 </style>
 <div id="auth-gate" class="auth-gate" style="display:flex">
   <div class="auth-box">
@@ -79,8 +79,25 @@
     display:inline-flex;align-items:center;justify-content:center;
     vertical-align:middle;margin-left:7px;transition:background .12s,color .12s;
   }
-  .help-btn:hover{background:#2563eb;color:#fff}
+.help-btn:hover{background:#2563eb;color:#fff}
 
+  .logout-btn{
+    width:30px;
+    height:30px;
+    border-radius:50%;
+    border:none;
+    background:#e5e7eb;
+    color:#4b5563;
+    cursor:pointer;
+    padding:0;
+    margin-left:-4px;
+    align-self:center;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .logout-btn:hover{background:#d1d5db}
+  .logout-btn svg{width:16px;height:16px}
   #help-modal .modal-box{width:560px;max-width:92vw}
   .help-list{display:flex;flex-direction:column;gap:15px}
   .help-row .help-desc{margin-top:5px;color:#4b5563;font-size:13px;line-height:1.6}
@@ -199,10 +216,9 @@
             <span style="color:#d97706;font-weight:700">■ 부감독 배치실</span>
           </div></div>
         <div class="help-note">
-          <span class="nt-h">📄 CSV 설명</span>
+          <span class="nt-h">📄 CSV 열 설명</span>
           · <b>날짜, 교시</b> : 기본정보에서 값을 가져와서, 자동으로 채워짐 (수정 불필요)<br>
           · 값(예: 1)이 있으면 <b>감독 배정</b>, 비우면 <b>감독 미배정</b>
-          <div class="help-warn">
           </div>
         </div>
       </div>`,
@@ -228,7 +244,6 @@
             <span class="nt-warn">⚠️ 주의</span><br>
             <b>🚫 감독배정 제외, 📌 감독시간 고정</b>은 모드 버튼으로, 활성화시켜야 작동<br>
           </div>
-        </div>
       </div>`,
   };
   window.openHelp = (key) => {
@@ -239,7 +254,7 @@
 
 <!-- 헤더 -->
 <header>
-  <h1>🏫 감독 자동배정 프로그램<span style="color:rgba(255,255,255,.6);font-weight:300;margin-left:1.5em">@JEONGKAPSU</span></h1>
+  <h1><span style="color:rgba(255,255,255,.6);font-weight:300;margin-left:1.5em">@JEONGKAPSU</span></h1>
   <div class="header-actions">
     <button class="btn-primary btn-icon" onclick="saveAll()">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
@@ -247,7 +262,7 @@
         <rect x="6.5" y="3" width="5" height="4"/>
         <rect x="5.5" y="11" width="9" height="5"/>
       </svg>
-      저장
+      save
     </button>
     <button class="btn-outline btn-icon" onclick="saveAsNamed()">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
@@ -255,17 +270,22 @@
         <rect x="6.5" y="3" width="5" height="4"/>
         <rect x="5.5" y="11" width="9" height="5"/>
       </svg>
-      다른 이름 저장
+      save as
     </button>
     <button class="btn-outline btn-icon" onclick="openLoadModal()">
       <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
         <path d="M3 6.5a1 1 0 0 1 1-1h3.5l1.2 1.6H16a1 1 0 0 1 1 1V15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>
       </svg>
-      불러오기
+      open
     </button>
     <button class="btn-danger" onclick="resetAll()">전체 초기화</button>
     <span id="auth-user" class="auth-user-badge" title="로그인 계정"></span>
-    <button class="btn-outline btn-sm" onclick="signOutApp()" title="로그아웃">로그아웃</button>
+    <button class="logout-btn" onclick="signOutApp()" title="로그아웃" aria-label="로그아웃">
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M10 3v7"/>
+        <path d="M6 5.5a6 6 0 1 0 8 0"/>
+      </svg>
+    </button>
   </div>
 </header>
 
