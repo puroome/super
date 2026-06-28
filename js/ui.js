@@ -2285,7 +2285,7 @@ export function init() {
   watchAuth((s) => {
     if (s.status === 'allowed') {
       if (gate) gate.style.display = 'none';
-      if (userBadge) userBadge.textContent = s.email ?? '';
+      if (userBadge) userBadge.textContent = s.name || s.email || '';
       startAppOnce();
       return;
     }
