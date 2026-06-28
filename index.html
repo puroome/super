@@ -69,196 +69,173 @@
   </div>
 </div>
 
-<!-- 사용 설명서 모달 -->
+<!-- 섹션별 도움말 모달 (각 섹션 제목 옆 ? 버튼이 여는 공용 모달) -->
 <style>
-  .help-btn {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    border: none;
-    background: #facc15;
-    color: #7a5500;
-    font-weight: 700;
-    font-size: 15px;
-    cursor: pointer;
-    margin-left: 8px;
-    align-self: center;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-    padding: 0;
+  /* 섹션 제목 옆 ? 버튼 */
+  .help-btn{
+    width:19px;height:19px;border-radius:50%;
+    border:1.5px solid #2563eb;background:#fff;color:#2563eb;
+    font-size:12px;font-weight:700;line-height:1;cursor:pointer;padding:0;
+    display:inline-flex;align-items:center;justify-content:center;
+    vertical-align:middle;margin-left:7px;transition:background .12s,color .12s;
   }
-  .help-btn:hover { background: #eab308; }
+  .help-btn:hover{background:#2563eb;color:#fff}
 
-  #help-modal .modal-box { width: 720px; max-width: 92vw; }
+  #help-modal .modal-box{width:560px;max-width:92vw}
+  .help-list{display:flex;flex-direction:column;gap:15px}
+  .help-row .help-desc{margin-top:5px;color:#4b5563;font-size:13px;line-height:1.6}
+  .help-desc b{color:#1f2937}
 
-  .help-intro {
-    font-size: 13px;
-    line-height: 1.65;
-    color: #48536a;
-    background: #f3f7fc;
-    border: 1px solid #e1ebf7;
-    border-radius: 8px;
-    padding: 11px 13px;
-    margin-bottom: 18px;
-  }
+  /* 버튼 이름 칩 — 실제 버튼 색과 동일 */
+  .hk{display:inline-block;border-radius:6px;padding:2px 10px;font-size:12.5px;font-weight:700;white-space:nowrap;border:1px solid transparent;line-height:1.5}
+  .hk-primary {background:#6f7ba0;color:#fff}                       /* 저장·추가·실행 */
+  .hk-danger  {background:#e53935;color:#fff}                       /* 초기화·배정취소 */
+  .hk-soft    {background:#e88a8a;color:#fff}                       /* 변경취소 */
+  .hk-outline {background:#fff;border-color:#6f7ba0;color:#6f7ba0}  /* 불러오기·교환·모드 */
+  .hk-csvup   {background:#e8f5e9;border-color:#a5d6a7;color:#2e7d32}/* CSV 올리기 */
+  .hk-csvdown {background:#fffde7;border-color:#ffe082;color:#f57f17}/* CSV 받기 */
+  .hk-action  {background:#eef1f6;border-color:#d7deea;color:#4b5563}/* 셀 더블클릭 등 동작 */
 
-  .help-step { margin-bottom: 18px; }
-  .help-step-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-  }
-  .help-num {
-    flex: none;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: #2563eb;
-    color: #fff;
-    font-size: 12px;
-    font-weight: 700;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .help-num.gray { background: #94a3b8; }
-  .help-step-title { font-size: 14px; font-weight: 700; color: #1f2937; }
-
-  .help-step ul { margin: 0; padding-left: 30px; }
-  .help-step li {
-    font-size: 13px;
-    line-height: 1.6;
-    color: #3c4658;
-    margin-bottom: 12px;
-  }
-  .help-step li b { color: #1f2937; font-weight: 600; }
-
-  .help-divider {
-    border: none;
-    border-top: 1px solid #eef1f6;
-    margin: 18px 0;
-  }
-  .help-tip {
-    font-size: 12.5px;
-    color: #6b5800;
-    background: #fffbeb;
-    border: 1px solid #fde68a;
-    border-radius: 8px;
-    padding: 9px 12px;
-    margin-top: 4px;
-  }
+  /* CSV 회색 설명 박스 */
+  .help-note{font-size:12.5px;line-height:1.75;color:#4b5563;background:#f7f9fc;border:1px solid #e6ebf3;border-radius:8px;padding:11px 13px;margin-top:2px}
+  .help-note .nt-h{font-weight:700;color:#1f2937;display:block;margin-bottom:5px}
+  .help-note b{color:#1f2937}
+  .help-warn{margin-top:9px;padding-top:9px;border-top:1px dashed #dbe2ec}
+  .help-warn .nt-warn{color:#b91c1c;font-weight:700}
 </style>
 
 <div id="help-modal" class="modal-overlay" style="display:none"
      onclick="if(event.target===this)this.style.display='none'">
   <div class="modal-box">
-    <h3>📖 사용 설명서</h3>
-
-    <div class="help-intro">
-      <b>⚙️ 기본정보 → 📝 배정설정 → 🎯 자동배정 → 🖨️ 감독표</b> 순서대로 진행하세요.<br>
-      앞 단계를 완료해야 다음 탭으로 진행가능합니다.
-    </div>
-
-    <!-- 1단계 -->
-    <div class="help-step">
-      <div class="help-step-head">
-        <span class="help-num">1</span>
-        <span class="help-step-title">⚙️ 기본정보</span>
-      </div>
-      <ul>
-        <li>
-          <b>시험일 및 고사실</b><br>[+ 날짜 추가]로 시험 날짜와 시작/종료 교시 입력<br>
-          고사실 등록은 [고사실CSV 올리기]로만 가능<br>
-          CSV 열: <b>고사실명, 부감독</b>(값이 있으면 부감독실, 비우면 정감독실)<br>
-        </li>
-        <li>
-          <b>감독유형 및 업무강도</b><br>
-          정감독은 강도 100으로 고정이며, 부감독은 업무강도 직접 결정<br>
-          [부감독 비활성화]를 누르면 모두 정감독으로 배정<br>
-        </li>
-        <li>
-          <b>감독교사 목록</b><br>
-          [+ 교사 추가] 또는 [CSV 올리기]로 명단 입력<br>
-          각 교사의 <b>이전누적강도</b>(지난 시험까지 쌓인 업무량)와 제외 고사실을 입력<br>
-          이전누적강도는 [📊 이전누적강도 불러오기]로 목록에서 선택 가능<br>
-          CSV 열: <b>이름, 이전누적강도, 제외고사실, 제외시간, 고정시간, 감독유형</b><br>
-          &nbsp;&nbsp;&nbsp;&nbsp;- 제외고사실 : 본인 담임반에 배정되면 안되는 등의 사유로 제외시킬 고사실<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;- 제외시간 : 출장 등 사유로 감독을 할 수 없는 시간<br>
-          &nbsp;&nbsp;&nbsp;&nbsp;- 고정시간 & 감독유형 : 담당과목 등의 사유로 반드시 감독배정되어야 하는 시간 (감독유형도 함께 결정)
-          &nbsp;&nbsp;&nbsp;&nbsp;- 제외시간, 고정시간, 감독유형 값은 <b>[자동배정]</b>에서 직접 입력가능
-        </li>
-      </ul>
-    </div>
-
-    <!-- 2단계 -->
-    <div class="help-step">
-      <div class="help-step-head">
-        <span class="help-num">2</span>
-        <span class="help-step-title">📝 배정설정</span>
-      </div>
-      <ul>
-        각 교시에 <b>어떤 고사실을 운영할지</b> 표에서 설정<br>
-        셀을 <b>더블클릭</b>해서 직접 배정(다시 더블클릭시 미배정) or [CSV 올리기]로 고사실별 운영여부 결정<br>
-        색 구분 : 초록 (정감독), 노랑 (부감독)
-      </ul>
-    </div>
-
-    <!-- 3단계 -->
-    <div class="help-step">
-      <div class="help-step-head">
-        <span class="help-num">3</span>
-        <span class="help-step-title">🎯 자동배정</span>
-      </div>
-      <ul>
-        [🚀 자동배정 실행]을 누르면 감독이 자동 배정<br>
-        자동배정 실행전 필요시, 1단계의 [감독교사 목록]에서 누락한 <b>제외시간, 고정시간, 감독유형</b> 직접입력<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;- [🚫 감독배정 제외] 버튼을 클릭 후, 셀을 선택하여 제외<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;- [📌 감독시간 고정] 버튼을 클릭 후, 셀을 선택하여 시간고정 (이후 우클릭해서 감독유형 입력 필수)<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;- 감독 교환 : 교환할 두 셀을 선택 후, [⇄ 선택 셀 교환] 버튼 클릭<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;- 배정 취소 : 자동배정된 결과를 취소 (단, 감독배정 제외, 감독시간 고정은 남아있음)<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;- 변경 취소 : 자동배정 후 실행한 모든 변경사항을 취소<br>
-        &nbsp;&nbsp;&nbsp;&nbsp;- 더블클릭 : 배정된 셀을 더블클릭시 배정결과(감독실+시간)을 고정해서, 자동배정 실행해도 안바뀜
-        </ul>
-    </div>
-
-    <!-- 4단계 -->
-    <div class="help-step">
-      <div class="help-step-head">
-        <span class="help-num">4</span>
-        <span class="help-step-title">🖨️ 감독표</span>
-      </div>
-      <ul>
-        [🖨️ 전체 감독표] : 전체 배정표 인쇄 or 파일 저장<br>
-        [🖨️ 개인 (전체)] : 전체 교사의 개인별 감독표 인쇄<br>
-        드롭다운에서 교사 목록 중 원하는 개별 교사 선택해 인쇄
-      </ul>
-    </div>
-
-    <hr class="help-divider">
-
-    <!-- 상단 메뉴 -->
-    <div class="help-step">
-      <div class="help-step-head">
-        <span class="help-num gray">＋</span>
-        <span class="help-step-title">상단 메뉴 (저장·관리)</span>
-      </div>
-      <ul>
-        <b>저장</b> : 지금 작업본에 덮어쓰기<br>
-        <b>다른 이름 저장</b> — 새 이름의 저장본 만들기<br>
-       <b>불러오기</b> : 저장해 둔 목록에서 불러오기<br>
-        <b>전체 초기화</b> : 현재 화면의 모든 데이터 삭제 (저장해 둔 목록 영향X)<br>
-      </ul>
-    </div>
-
-    <div style="text-align:right;margin-top:8px">
+    <div id="help-body"></div>
+    <div style="text-align:right;margin-top:14px">
       <button class="btn-primary"
         onclick="document.getElementById('help-modal').style.display='none'">닫기</button>
     </div>
   </div>
 </div>
+
+<script>
+  // 섹션 키 → 도움말 내용. 제목 옆 ? 버튼이 openHelp(키)로 이 내용을 띄운다.
+  const HELP = {
+    rooms: `
+      <div class="help-list">
+        <div class="help-row"><span class="hk hk-primary">+ 날짜 추가</span>
+          <div class="help-desc">시험 날짜 한 줄씩 추가 (날짜, 시작교시, 종료교시 입력)</div></div>
+        <div class="help-row"><span class="hk hk-csvup">고사실CSV 올리기</span>
+          <div class="help-desc">고사실 목록을 CSV로 한 번에 등록</div></div>
+        <div class="help-row"><span class="hk hk-csvdown">고사실 CSV 양식 받기</span>
+          <div class="help-desc">작성용 CSV 양식 내려받기 (현재 입력 내용 포함됨)</div></div>
+        <div class="help-row"><span class="hk hk-danger">초기화</span>
+          <div class="help-desc">시험일 및 고사실 영역만 비우기</div></div>
+        <div class="help-note">
+          <span class="nt-h">📄 CSV 열 설명</span>
+          · <b>고사실명</b> : 고사실 이름 (예: 201, 3년 후반 복도)<br>
+          · <b>부감독</b> : 값(예: 1)이 있으면 <b style="color:#d97706">부감독실</b>, 비우면 <b style="color:#16a34a">정감독실</b>
+          <div class="help-warn">
+            <span class="nt-warn">⚠️ 주의</span><br>
+            · 고사실은 <b>CSV로만 등록</b> (개별 추가 버튼 없음)
+          </div>
+        </div>
+      </div>`,
+
+    roles: `
+      <div class="help-list">
+        <div class="help-row"><span class="hk hk-action">업무강도</span>
+          <div class="help-desc">각 감독유형의 부담 크기 입력 (정감독 100 고정, 부감독만 조절)</div></div>
+        <div class="help-row"><span class="hk hk-outline">부감독 비활성화</span>
+          <div class="help-desc">부감독 없이 전원 정감독 배정 (다시 누르면 부감독 사용)</div></div>
+        <div class="help-note">
+          업무강도? 감독유형에 따른 <b>상대적</b> 업무량으로, 자동배정시 우선 고려사항<br>
+        </div>
+      </div>`,
+
+    teachers: `
+      <div class="help-list">
+        <div class="help-row"><span class="hk hk-primary">+ 교사 추가</span>
+          <div class="help-desc">빈 줄 추가 후 직접 입력<br>
+          <b>이름, 이전누적업무강도, 제외고사실</b>만 직접 입력가능
+         </div></div>
+        <div class="help-row"><span class="hk hk-csvup">CSV 올리기</span>
+          <div class="help-desc">CSV로 한 번에 입력<br>
+	<b>제외시간, 고정시간, 감독유형</b>까지 포함한 모든 자료를 CSV로 입력가능<br>
+	</div></div>
+        <div class="help-row"><span class="hk hk-csvdown">CSV 양식 받기</span>
+          <div class="help-desc">작성용 CSV 양식 내려받기 (현재 입력 내용 포함됨)</div></div>
+        <div class="help-row"><span class="hk hk-outline">📊 이전누적강도 불러오기</span>
+          <div class="help-desc">저장된 이전 자료에서 누적강도만 불러와서 채우기</div></div>
+        <div class="help-row"><span class="hk hk-danger">초기화</span>
+          <div class="help-desc">교사 목록만 비우기</div></div>
+        <div class="help-note">
+          <span class="nt-h">📄 CSV 열 설명</span>
+          · <b>이름</b> : 교사 이름<br>
+          · <b>이전누적업무강도</b> : 지난 시험까지 쌓인 업무량 합계<br>
+          · <b>제외고사실</b> : 배정 금지 고사실 (본인 담임반 등)<br>
+          · <b>제외시간</b> : 감독 불가 시간 (출장 등), 여러 개는 쉼표로 구분<br>
+          · <b>고정시간</b> : 반드시 감독할 시간 (담당과목시간 등)<br>
+          · <b>감독유형</b> : 고정된 시간의 감독유형 (<b>1 = 정감독, 2 = 부감독</b>)
+          <div class="help-warn">
+            <span class="nt-warn">⚠️ 꼭 지킬 규칙</span><br>
+            · 시간 형식 = <b>일+교시 두 자리</b> (예: 1일차 2교시 → <b>12</b>), 여러 개는 쉼표로 구분<br>
+            · <b>고정시간</b>과 <b>감독유형</b>은 하나로 묶인 데이터로, 입력된 값의 개수가 동일해야함<br>
+            · <b>제외시간, 고정시간 및 감독유형</b>은 비워두고 <b>[자동배정] 탭에서 직접 지정</b> 가능
+          </div>
+        </div>
+      </div>`,
+
+    req: `
+      <div class="help-list">
+        <div class="help-row"><span class="hk hk-action">셀 더블클릭</span>
+          <div class="help-desc">저장한 고사실에 <b>감독배정 ↔ 미배정</b> 토글</div></div>
+        <div class="help-row"><span class="hk hk-csvup">CSV 올리기</span>
+          <div class="help-desc">고사실별 운영 여부를 CSV로 한 번에 설정</div></div>
+        <div class="help-row"><span class="hk hk-csvdown">CSV 양식 받기</span>
+          <div class="help-desc">작성용 CSV 양식 내려받기 (현재 입력 내용 포함됨)</div></div>
+        <div class="help-row"><span class="hk hk-danger">초기화</span>
+          <div class="help-desc">입력된 배정값 지우기</div></div>
+        <div class="help-row" style="margin-top:2px"><b style="font-size:13px">색 구분</b>
+          <div class="help-desc">
+            <span style="color:#16a34a;font-weight:700">■ 정감독 배치실</span> &nbsp;&nbsp;
+            <span style="color:#d97706;font-weight:700">■ 부감독 배치실</span>
+          </div></div>
+        <div class="help-note">
+          <span class="nt-h">📄 CSV 설명</span>
+          · <b>날짜, 교시</b> : 기본정보에서 값을 가져와서, 자동으로 채워짐 (수정 불필요)<br>
+          · 값(예: 1)이 있으면 <b>감독 배정</b>, 비우면 <b>감독 미배정</b>
+          <div class="help-warn">
+          </div>
+        </div>
+      </div>`,
+
+    assign: `
+      <div class="help-list">
+        <div class="help-row"><span class="hk hk-primary">🚀 자동배정 실행</span>
+          <div class="help-desc">누적된 업무강도 등 다양한 조건에 맞춰 감독 자동 배정</div></div>
+        <div class="help-row"><span class="hk hk-outline">🚫 감독배정 제외</span>
+          <div class="help-desc">버튼 켠 뒤 셀 선택 → 해당 시간에 감독 제외 (X표시된 <span style="color:red">빨간색 셀</span>)</div></div>
+        <div class="help-row"><span class="hk hk-outline">📌 감독시간 고정</span>
+          <div class="help-desc">버튼 켠 뒤 셀 선택 → 해당시간에 감독 고정 (<span style="color:blue">파란색 셀</span>)<br>
+          이후 우클릭으로 감독유형(1 = 정감독, 2 = 부감독) 지정필수</div></div>
+        <div class="help-row"><span class="hk hk-outline">⇄ 선택 셀 교환</span>
+          <div class="help-desc">두 셀 선택 후 서로 교환</div></div>
+        <div class="help-row"><span class="hk hk-danger">배정 취소</span>
+          <div class="help-desc">자동배정 결과만 취소 (감독배정제외 및 감독시간 고정은 유지)</div></div>
+        <div class="help-row"><span class="hk hk-soft">변경 취소</span>
+          <div class="help-desc">자동배정 후 실행한 모든 변경 되돌리기</div></div>
+        <div class="help-row"><span class="hk hk-action">셀 더블클릭</span>
+          <div class="help-desc">배정 결과 (감독실+시간) 고정, 기본핵심정보인 감독시간 고정과 달리 <b>보조 기능</b></div></div>
+        <div class="help-note">
+            <span class="nt-warn">⚠️ 주의</span><br>
+            <b>🚫 감독배정 제외, 📌 감독시간 고정</b>은 모드 버튼으로, 활성화시켜야 작동<br>
+          </div>
+        </div>
+      </div>`,
+  };
+  window.openHelp = (key) => {
+    document.getElementById('help-body').innerHTML = HELP[key] || '';
+    document.getElementById('help-modal').style.display = 'flex';
+  };
+</script>
 
 <!-- 헤더 -->
 <header>
@@ -289,7 +266,6 @@
     <button class="btn-danger" onclick="resetAll()">전체 초기화</button>
     <span id="auth-user" class="auth-user-badge" title="로그인 계정"></span>
     <button class="btn-outline btn-sm" onclick="signOutApp()" title="로그아웃">로그아웃</button>
-    <button class="help-btn" onclick="document.getElementById('help-modal').style.display='flex'" title="사용 설명서" aria-label="사용 설명서">?</button>
   </div>
 </header>
 
@@ -313,7 +289,7 @@
 
       <!-- 시험일 및 고사실 -->
       <div class="card basic-exam-card">
-        <h2>📅 시험일 및 고사실</h2>
+        <h2>📅 시험일 및 고사실 <button class="help-btn" onclick="openHelp('rooms')" title="도움말" aria-label="도움말">?</button></h2>
         <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn-primary" onclick="addExamDay()">+ 날짜 추가</button>
           <label class="btn-csv-upload">
@@ -323,8 +299,6 @@
           <button class="btn-csv-download" onclick="downloadRoomCSVTemplate()">고사실 CSV 받기</button>
           <button class="btn-danger btn-sm" onclick="resetSection('examAndRooms')">초기화</button>
         </div>
-        <p class="csv-hint" style="margin-bottom:8px"><b>고사실 CSV 열: 고사실명, 부감독</b><br>
-          [부감독]열에 값이 있으면 부감독, 비우면 정감독</p>
         <div id="room-list" style="margin-bottom:10px"></div>
         <div style="overflow-x:auto">
           <table class="examday-table">
@@ -338,21 +312,20 @@
 
       <!-- 감독유형 및 업무강도 -->
       <div class="card basic-role-card">
-        <h2>📌 감독유형 및 업무강도</h2>
+        <h2>📌 감독유형 및 업무강도 <button class="help-btn" onclick="openHelp('roles')" title="도움말" aria-label="도움말">?</button></h2>
         <table>
           <thead>
             <tr><th>감독유형</th><th>업무강도</th><th></th></tr>
           </thead>
           <tbody id="role-list"></tbody>
         </table>
-        <p class="csv-hint" style="margin-top:6px">[부감독 비활성화] 클릭시 모두 정감독 배정</p>
       </div>
 
     </div>
 
     <!-- 하단 행: 감독교사 목록 (전체 폭) -->
     <div class="card">
-      <h2>🤖 감독교사 목록</h2>
+      <h2>🤖 감독교사 목록 <button class="help-btn" onclick="openHelp('teachers')" title="도움말" aria-label="도움말">?</button></h2>
       <div style="margin-bottom:8px;display:flex;gap:6px;flex-wrap:wrap">
         <button class="btn-primary" onclick="addTeacher()">+ 교사 추가</button>
         <label class="btn-csv-upload">
@@ -363,8 +336,6 @@
         <button class="btn-outline" onclick="openPrevWorkloadPicker(this)">📊 이전누적강도 불러오기</button>
         <button class="btn-danger btn-sm" onclick="resetSection('teachers')">초기화</button>
       </div>
-      <p class="csv-hint" style="margin-bottom:6px"><b>감독교사 CSV 열 : 이름, 이전누적강도, 제외 고사실, 제외시간, 고정시간, 감독유형</b><br>
-      제외시간, 고정시간, 감독유형은 [자동배정]탭에서 직접 입력가능</p>
       <div style="overflow-x:auto;margin-top:8px">
         <div id="teacher-list-grid"></div>
       </div>
@@ -378,11 +349,7 @@
 ════════════════════════════════════════════ -->
 <div id="tab-req" class="tab-panel">
   <div class="card">
-    <h2>📝 시험장 운영 고사실 설정</h2>
-    <p style="margin-bottom:10px;color:#7a8599;font-size:12px">
-      셀 더블클릭시 해당 고사실에 [감독배정/미배정] 토글 전환 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span style="background:#eaf6ec;padding:1px 8px;border-radius:3px">정감독</span>&nbsp;
-      <span style="background:#fff3cd;padding:1px 8px;border-radius:3px">부감독</span>&nbsp;
-     </p>
+    <h2>📝 시험장 운영 고사실 설정 <button class="help-btn" onclick="openHelp('req')" title="도움말" aria-label="도움말">?</button></h2>
     <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
       <label class="btn-csv-upload">
         CSV 올리기
@@ -400,7 +367,7 @@
 ════════════════════════════════════════════ -->
 <div id="tab-assign" class="tab-panel">
   <div class="card">
-    <h2>🎯 자동배정</h2>
+    <h2>🎯 자동배정 <button class="help-btn" onclick="openHelp('assign')" title="도움말" aria-label="도움말">?</button></h2>
     <div class="assign-actions">
       <button id="btn-run" class="btn-run" onclick="runAssign()">🚀 자동배정 실행</button>
       <button id="btn-exclude-mode" class="btn-outline btn-mode" onclick="toggleExcludeMode()">🚫 감독배정 제외</button>
@@ -408,9 +375,6 @@
       <button id="btn-swap" class="btn-outline" onclick="doSwap()" disabled>⇄ 선택 셀 교환</button>
       <button class="btn-danger" onclick="cancelAssignment()">배정 취소</button>
       <button class="btn-danger btn-soft" onclick="resetAssignChanges()">변경 취소</button>
-      <span style="color:#7a8599;font-size:11px">
-        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;🖱️원클릭 : 교환&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;🖱️🖱️더블클릭 : 고정 (감독실+시간)
-      </span>
     </div>
     <div id="swap-history" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
     <div id="assign-grid-wrap">
